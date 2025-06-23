@@ -27,6 +27,9 @@ func main() {
 		handleFetch()
 	case "clone":
 		handleClone()
+	case "help", "--help", "-h":
+		printUsage()
+		os.Exit(0)
 	default:
 		fmt.Printf("Unknown subcommand: %s\n", os.Args[1])
 		printUsage()
