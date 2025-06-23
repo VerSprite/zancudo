@@ -4,7 +4,7 @@ MQTT interception proxy made in Go. It can handle TLS and password authenticatio
 
 ## MQTT Interception Proxy (`mqtt_mitm_proxy.go`)
 
-# Usage
+### Usage
 
 The proxy supports the following command-line flags:
 
@@ -22,10 +22,8 @@ The proxy supports the following command-line flags:
 ### Example
 
 ```bash
-./mqtt_mitm_proxy --listen 127.0.0.1:8888 --broker internal.broker.local:8883 --proxy-cert proxy.crt --proxy-key proxy.key --verbose
+go run mqtt_mitm_proxy.go --listen 127.0.0.1:8888 --broker internal.broker.local:8883 --proxy-cert proxy.crt --proxy-key proxy.key --verbose
 ```
-
-# For detailed analysis of MQTT traffic, including encrypted streams.
 
 ## Certificate Generation (`gen_certs.go`)
 
