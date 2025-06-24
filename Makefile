@@ -38,4 +38,4 @@ $(MACOS_ARM64_BINS): %_darwin_arm64: %.go
 
 # Clean up generated binaries and certificates
 clean:
-	rm -f $(NATIVE_BINS) $(WINDOWS_BINS) $(MACOS_AMD64_BINS) $(MACOS_ARM64_BINS) proxy.crt proxy.key ca.crt ca.key
+	rm -f $(NATIVE_BINS) $(WINDOWS_BINS) $(MACOS_AMD64_BINS) $(MACOS_ARM64_BINS) proxy.crt proxy.key client.crt client.key ca.crt ca.key

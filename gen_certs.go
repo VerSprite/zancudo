@@ -46,8 +46,8 @@ func printUsage() {
 	fmt.Println("          Usage: go run gen_certs.go clone <path_to_cert.pem> [flags]")
 	fmt.Println("\nFlags:")
 	fmt.Println("  --proxy-hostname <host>   Hostname or IP to issue the new certificate for (instead of the original's).")
-	fmt.Println("  --out-cert <path>         Output path for the new certificate (default: \"proxy.crt\").")
-	fmt.Println("  --out-key <path>          Output path for the new private key (default: \"proxy.key\").")
+	fmt.Println("  --out-cert <path>         Output path for the new certificate (default: \"proxy.crt\" for fetch, \"client.crt\" for clone).")
+	fmt.Println("  --out-key <path>          Output path for the new private key (default: \"proxy.key\" for fetch, \"client.key\" for clone).")
 	fmt.Println("\nCA Signing Options:")
 	fmt.Println("  --ca-cert <path>          Path to the CA certificate file for signing.")
 	fmt.Println("  --ca-key <path>           Path to the CA private key file for signing.")
@@ -100,8 +100,8 @@ func handleFetch() {
 func handleClone() {
 	cloneCmd := flag.NewFlagSet("clone", flag.ExitOnError)
 	proxyHostname := cloneCmd.String("proxy-hostname", "", "Optional: a hostname or IP to issue the new certificate for, instead of the original's.")
-	outCert := cloneCmd.String("out-cert", "proxy.crt", "Output path for the new certificate.")
-	outKey := cloneCmd.String("out-key", "proxy.key", "Output path for the new private key.")
+	outCert := cloneCmd.String("out-cert", "client.crt", "Output path for the new certificate.")
+	outKey := cloneCmd.String("out-key", "client.key", "Output path for the new private key.")
 	caCertPath, caKeyPath, genCA := addCASigningFlags(cloneCmd)
 	cloneCmd.Parse(os.Args[2:])
 
