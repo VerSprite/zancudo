@@ -22,12 +22,18 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/jhump/protoreflect/desc"
+	"github.com/jhump/protoreflect/desc/protoparse"
+	"github.com/jhump/protoreflect/dynamic"
 	"github.com/vmihailenco/msgpack/v5"
+	"go.mongodb.org/mongo-driver/bson"
 	"gopkg.in/yaml.v3"
 )
 
@@ -89,8 +95,12 @@ var (
 	password string
 
 	verbose       bool
+	vShorthand    bool // for -v alias
+
 	jwtVerifyKeys multiStringFlag
 	loadedJWTKeys []interface{}
+	protoPaths    multiStringFlag
+	messageDescriptors []*desc.MessageDescriptor
 )
 
 // Custom type to allow a flag to be specified multiple times
@@ -923,12 +933,12 @@ func printProxyUsage() {
 	fmt.Println("  --proxy-key <path>        Path to the proxy's server private key file. If empty, listens for plaintext.")
 	fmt.Println("  --client-cert <path>      Path to the client's public certificate file. If empty, connects via plaintext.")
 	fmt.Println("  --client-key <path>       Path to the client's private key file for authenticating with the broker")
+	fmt.Println("  --jwt-key <file>          Path to a private key file (PEM format) for verifying JWT signatures. Can be specified multiple times.")
+	fmt.Println("  --proto <path>            Path to a .proto file or a directory of .proto files for payload decoding. Can be repeated.")
 	fmt.Println("  --user <username>         Username for MQTT authentication (replaces client's username if any)")
 	fmt.Println("  --pass <password>         Password for MQTT authentication (replaces client's password if any)")
-	fmt.Println("  --verbose                 Enable verbose logging for detailed analysis.")
+	fmt.Println("  --verbose, -v             Enable verbose output")
 	fmt.Println("  --no-color                Disable colored output (useful for piping to files).")
-	fmt.Fprintf(os.Stderr, "  --key <file>:        Path to a private key file (PEM format) for verifying JWT signatures. Can be specified multiple times.\n")
-	fmt.Fprintf(os.Stderr, "\n")
 }
 
 func main() {
@@ -941,15 +951,20 @@ func main() {
 	flag.StringVar(&proxyKeyFile, "proxy-key", "", "Path to the proxy's server private key file. If empty, listens for plaintext.")
 	flag.StringVar(&clientCertFile, "client-cert", "", "Path to the client's public certificate file. If empty, connects via plaintext.")
 	flag.StringVar(&clientKeyFile, "client-key", "", "Path to the client's private key file for authenticating with the broker")
+	flag.Var(&jwtVerifyKeys, "jwt-key", "Path to a private key file (PEM format) for verifying JWT signatures. Can be specified multiple times.")
+	flag.Var(&protoPaths, "proto", "Path to a .proto file or a directory of .proto files for payload decoding. Can be repeated.")
 	flag.StringVar(&username, "user", "", "Username for MQTT authentication (replaces client's username if any)")
 	flag.StringVar(&password, "pass", "", "Password for MQTT authentication (replaces client's password if any)")
-	flag.BoolVar(&verbose, "v", false, "Enable verbose logging for detailed analysis.")
+	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
+	flag.BoolVar(&vShorthand, "v", false, "Enable verbose output (shorthand)")
 	flag.BoolVar(&noColor, "no-color", false, "Disable colorized output")
-	flag.Var(&jwtVerifyKeys, "key", "Path to a private key file (PEM format) for verifying JWT signatures. Can be specified multiple times.")
 
 	flag.Parse()
 
+	verbose = verbose || vShorthand
+
 	if noColor {
+		colorReset = ""
 		clientToServerColor = ""
 		serverToClientColor = ""
 		packetTypeColor     = ""
@@ -968,6 +983,10 @@ func main() {
 		colorBold          = ""
 		colorBrightMagenta = ""
 		colorBrightWhite   = ""
+	}
+
+	if len(protoPaths) > 0 {
+		loadProtobufSchemas(protoPaths)
 	}
 
 	// Load JWT verification keys
@@ -1014,36 +1033,116 @@ func main() {
 	}
 }
 
+func loadProtobufSchemas(paths []string) {
+	log.Println("Loading protobuf schemas...")
+	protoFileToPath := make(map[string]string)
+	var importPaths []string
+
+	for _, p := range paths {
+		stat, err := os.Stat(p)
+		if err != nil {
+			log.Printf("  [!] cannot access proto path %s: %v", p, err)
+			continue
+		}
+		if stat.IsDir() {
+			importPaths = append(importPaths, p)
+			filepath.Walk(p, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !info.IsDir() && strings.HasSuffix(info.Name(), ".proto") {
+					rel, err := filepath.Rel(p, path)
+					if err != nil {
+						return err
+					}
+					protoFileToPath[rel] = p
+				}
+				return nil
+			})
+		} else {
+			if strings.HasSuffix(p, ".proto") {
+				dir := filepath.Dir(p)
+				file := filepath.Base(p)
+				protoFileToPath[file] = dir
+				importPaths = append(importPaths, dir)
+			}
+		}
+	}
+
+	protoFiles := make([]string, 0, len(protoFileToPath))
+	for k := range protoFileToPath {
+		protoFiles = append(protoFiles, k)
+	}
+
+	parser := protoparse.Parser{
+		ImportPaths: importPaths,
+	}
+
+	fds, err := parser.ParseFiles(protoFiles...)
+	if err != nil {
+		log.Printf("  [!] Failed to parse .proto files: %v", err)
+		return
+	}
+
+	for _, fd := range fds {
+		for _, md := range fd.GetMessageTypes() {
+			messageDescriptors = append(messageDescriptors, md)
+			log.Printf("  [+] Loaded message type: %s", md.GetFullyQualifiedName())
+		}
+	}
+	log.Printf("Loaded %d message types from .proto files.", len(messageDescriptors))
+}
+
 // --- Payload Processing ---
 
 func processPayload(data []byte) {
-	// Trim whitespace as some formats are sensitive to it
-	trimmedData := bytes.TrimSpace(data)
-	if len(trimmedData) == 0 {
+	// Handle empty payload first.
+	if len(data) == 0 {
 		fmt.Println("    (empty payload)")
 		return
 	}
 
-	if tryJWT(trimmedData) {
+	// Try binary formats that are whitespace-sensitive with the original data.
+	if tryMessagePack(data) {
 		return
 	}
-	if tryPrettifyJSON(trimmedData) {
+	if tryCBOR(data) {
 		return
 	}
-	if tryPrettifyXML(trimmedData) {
+	if tryBSON(data) {
 		return
 	}
-	if tryMessagePack(trimmedData) {
-		return
-	}
-	if tryPrettifyYAML(trimmedData) {
-		return
-	}
-	if tryBase64(trimmedData) {
+	if tryProtobuf(data) {
 		return
 	}
 
-	handlePlaintextOrHex(data) // Use original data for final fallback
+	// For text-based formats, trim whitespace.
+	trimmedData := bytes.TrimSpace(data)
+
+	// If after trimming, the payload is not empty, check text formats.
+	if len(trimmedData) > 0 {
+		if tryJWT(trimmedData) {
+			return
+		}
+		if tryPrettifyJSON(trimmedData) {
+			return
+		}
+		if tryPrettifyXML(trimmedData) {
+			return
+		}
+		if tryPrettifyYAML(trimmedData) {
+			return
+		}
+		if tryBase64(trimmedData) {
+			return
+		}
+		if tryHex(trimmedData) {
+			return
+		}
+	}
+
+	// Use original data for final fallback (plaintext, hex, or all-whitespace).
+	handlePlaintextOrHex(data)
 }
 
 func tryJWT(data []byte) bool {
@@ -1061,12 +1160,16 @@ func tryJWT(data []byte) bool {
 	fmt.Printf("    %sDetected Format: JWT%s\n", packetTypeColor, colorReset)
 
 	// Pretty print header
-	headerJSON, _ := json.MarshalIndent(token.Header, "    ", "  ")
-	fmt.Printf("    %sHeader:%s\n%s\n", topicColor, colorReset, string(headerJSON))
+	headerJSON, _ := json.MarshalIndent(token.Header, "", "  ")
+	fmt.Printf("    %sHeader:%s\n", topicColor, colorReset)
+	indentedHeader := "    " + strings.ReplaceAll(string(headerJSON), "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indentedHeader, " "))
 
 	// Pretty print claims
-	claimsJSON, _ := json.MarshalIndent(token.Claims, "    ", "  ")
-	fmt.Printf("    %sClaims:%s\n%s\n", topicColor, colorReset, string(claimsJSON))
+	claimsJSON, _ := json.MarshalIndent(token.Claims, "", "  ")
+	fmt.Printf("    %sClaims:%s\n", topicColor, colorReset)
+	indentedClaims := "    " + strings.ReplaceAll(string(claimsJSON), "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indentedClaims, " "))
 
 	// If keys are provided, verify signature
 	if len(loadedJWTKeys) > 0 {
@@ -1114,41 +1217,177 @@ func tryJWT(data []byte) bool {
 
 func tryPrettifyJSON(data []byte) bool {
 	var obj interface{}
-	if err := json.Unmarshal(data, &obj); err != nil {
+	err := json.Unmarshal(data, &obj)
+	corrected := false
+
+	// If initial parsing fails, try to fix common issues like single quotes.
+	if err != nil {
+		trimmedStr := string(bytes.TrimSpace(data))
+		if strings.Contains(trimmedStr, "'") &&
+			((strings.HasPrefix(trimmedStr, "{") && strings.HasSuffix(trimmedStr, "}")) ||
+				(strings.HasPrefix(trimmedStr, "[") && strings.HasSuffix(trimmedStr, "]"))) {
+
+			correctedData := []byte(strings.ReplaceAll(trimmedStr, "'", "\""))
+			if json.Unmarshal(correctedData, &obj) == nil {
+				err = nil
+				corrected = true
+			}
+		}
+	}
+
+	// If we still have an error, it's not JSON we can handle.
+	if err != nil {
 		return false
 	}
 
-	// Avoid flagging simple strings, numbers, or booleans as a JSON object
+	// Avoid flagging simple primitives that aren't complex objects
 	switch obj.(type) {
-	case string, float64, bool:
+	case string, float64, bool, nil:
 		return false
 	}
 
-	fmt.Printf("    %sDetected Format: JSON%s\n", packetTypeColor, colorReset)
-	pretty, err := json.MarshalIndent(obj, "    ", "  ")
+	if corrected {
+		fmt.Printf("    %sDetected Format: JSON%s (single quotes auto-corrected)\n", packetTypeColor, colorReset)
+	} else {
+		fmt.Printf("    %sDetected Format: JSON%s\n", packetTypeColor, colorReset)
+	}
+
+	pretty, err := json.MarshalIndent(obj, "", "  ")
 	if err != nil {
 		// This is unlikely to happen if unmarshaling succeeded
 		fmt.Printf("      Could not re-marshal JSON: %v\n", err)
 		return true // It was valid JSON, so we return true
 	}
 
-	fmt.Println(string(pretty))
+	indented := "    " + strings.ReplaceAll(string(pretty), "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indented, " "))
 	return true
 }
 
 func tryMessagePack(data []byte) bool {
+	r := bytes.NewReader(data)
+	dec := msgpack.NewDecoder(r)
+
 	var v interface{}
-	if err := msgpack.Unmarshal(data, &v); err != nil {
+	if err := dec.Decode(&v); err != nil {
 		return false
 	}
+
+	// If there is any data left in the reader, it's not a clean MessagePack object.
+	if r.Len() > 0 {
+		return false
+	}
+
+	// Heuristic: If the decoded value is not a map or a slice,
+	// it's probably not the intended format.
+	switch v.(type) {
+	case map[string]interface{}, []interface{}, map[interface{}]interface{}:
+		// This looks like a complex object, proceed.
+	default:
+		// It's a simple primitive (string, int, bool, etc.).
+		// While technically valid MessagePack, it's likely a false positive for our use case.
+		return false
+	}
+
 	fmt.Printf("    %sDetected Format: MessagePack%s (decoded and shown as JSON)\n", packetTypeColor, colorReset)
-	pretty, err := json.MarshalIndent(v, "    ", "  ")
+	pretty, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		// This should not happen if unmarshal to interface worked
 		fmt.Printf("      Could not convert to JSON: %v\n", err)
 		return true
 	}
-	fmt.Println(string(pretty))
+	indented := "    " + strings.ReplaceAll(string(pretty), "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indented, " "))
+	return true
+}
+
+// convertMapKeysToStrings recursively converts map keys from interface{} to string
+// to allow marshaling to JSON. CBOR maps can have any key type, but JSON requires strings.
+func convertMapKeysToStrings(i interface{}) interface{} {
+	switch v := i.(type) {
+	case map[interface{}]interface{}:
+		m := make(map[string]interface{})
+		for k, val := range v {
+			m[fmt.Sprintf("%v", k)] = convertMapKeysToStrings(val)
+		}
+		return m
+	case []interface{}:
+		for i, val := range v {
+			v[i] = convertMapKeysToStrings(val)
+		}
+		return v
+	case map[string]interface{}:
+		for k, val := range v {
+			v[k] = convertMapKeysToStrings(val)
+		}
+		return v
+	default:
+		return i
+	}
+}
+
+func tryCBOR(data []byte) bool {
+	var v interface{}
+	if err := cbor.Unmarshal(data, &v); err != nil {
+		return false
+	}
+
+	// Heuristic: If the decoded value is not a map or a slice,
+	// it's probably not the intended format.
+	switch v.(type) {
+	case map[string]interface{}, []interface{}, map[interface{}]interface{}:
+		// This looks like a complex object, proceed.
+	default:
+		// It's a simple primitive (string, int, bool, etc.).
+		// While technically valid CBOR, it's likely a false positive for our use case.
+		return false
+	}
+
+	// Convert map keys for JSON compatibility
+	v = convertMapKeysToStrings(v)
+
+	fmt.Printf("    %sDetected Format: CBOR%s (decoded and shown as JSON)\n", packetTypeColor, colorReset)
+	pretty, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		// This should not happen if unmarshal to interface worked
+		fmt.Printf("      Could not convert to JSON: %v\n", err)
+		return true
+	}
+	indented := "    " + strings.ReplaceAll(string(pretty), "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indented, " "))
+	return true
+}
+
+func tryBSON(data []byte) bool {
+	var v interface{}
+	if err := bson.Unmarshal(data, &v); err != nil {
+		return false
+	}
+
+	// Heuristic: If the decoded value is not a map or a slice (document/array),
+	// it's probably not the intended format.
+	switch v.(type) {
+	case bson.D, bson.M, bson.A, []interface{}:
+		// This looks like a complex object, proceed.
+	default:
+		// It's a simple primitive (string, int, bool, etc.).
+		// While technically valid BSON, it's likely a false positive for our use case.
+		return false
+	}
+
+	fmt.Printf("    %sDetected Format: BSON%s (decoded and shown as JSON)\n", packetTypeColor, colorReset)
+
+	// Use extended JSON for a more readable representation of BSON types.
+	extJSON, err := bson.MarshalExtJSON(v, false, false)
+	if err != nil {
+		fmt.Printf("      Could not convert BSON to extended JSON: %v\n", err)
+		return true // It was valid BSON, so we return true.
+	}
+
+	// Pretty print the resulting JSON
+	prettyJSON := prettyPrintJSON(string(extJSON))
+	indented := "    " + strings.ReplaceAll(prettyJSON, "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indented, " "))
 	return true
 }
 
@@ -1175,6 +1414,35 @@ func tryBase64(data []byte) bool {
 	return false
 }
 
+func tryHex(data []byte) bool {
+	// Heuristic: require more than 4 chars and all must be hex to avoid false positives on short strings.
+	if len(data) <= 4 || len(data)%2 != 0 {
+		return false
+	}
+	for _, b := range data {
+		isHex := (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
+		if !isHex {
+			return false
+		}
+	}
+
+	decoded, err := hex.DecodeString(string(data))
+	if err != nil {
+		return false // Should not happen given the check above, but for safety.
+	}
+
+	// It's hex, but only process it if the decoded content is not the same as the original.
+	if !bytes.Equal(data, decoded) {
+		fmt.Printf("    %sDetected Format: Hex%s\n", packetTypeColor, colorReset)
+		fmt.Printf("    %s--- Begin Decoded Hex ---%s\n", topicColor, colorReset)
+		processPayload(decoded) // Recursive call
+		fmt.Printf("    %s--- End Decoded Hex ---%s\n", topicColor, colorReset)
+		return true
+	}
+
+	return false
+}
+
 func tryPrettifyXML(data []byte) bool {
 	if !bytes.HasPrefix(data, []byte("<")) {
 		return false
@@ -1182,7 +1450,7 @@ func tryPrettifyXML(data []byte) bool {
 	var out bytes.Buffer
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	encoder := xml.NewEncoder(&out)
-	encoder.Indent("    ", "  ")
+	encoder.Indent("", "  ")
 	for {
 		tok, err := decoder.Token()
 		if err == io.EOF {
@@ -1200,7 +1468,8 @@ func tryPrettifyXML(data []byte) bool {
 	}
 
 	fmt.Printf("    %sDetected Format: XML%s\n", packetTypeColor, colorReset)
-	fmt.Println(out.String())
+	indented := "    " + strings.ReplaceAll(out.String(), "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indented, " "))
 	return true
 }
 
@@ -1224,6 +1493,102 @@ func tryPrettifyYAML(data []byte) bool {
 	indented := "    " + strings.ReplaceAll(string(out), "\n", "\n    ")
 	fmt.Println(strings.TrimRight(indented, " "))
 	return true
+}
+
+func tryProtobuf(data []byte) bool {
+	// If schemas are loaded, try to unmarshal against known types
+	if len(messageDescriptors) > 0 {
+		for _, md := range messageDescriptors {
+			msg := dynamic.NewMessage(md)
+			if err := msg.Unmarshal(data); err == nil {
+				// Success, now pretty print
+				fmt.Printf("    %sDetected Format: Protobuf (%s)%s\n", packetTypeColor, md.GetFullyQualifiedName(), colorReset)
+				json, err := msg.MarshalJSON()
+				if err != nil {
+					fmt.Printf("      Could not convert protobuf to JSON: %v\n", err)
+					return true
+				}
+
+				prettyJSON := prettyPrintJSON(string(json))
+				indented := "    " + strings.ReplaceAll(prettyJSON, "\n", "\n    ")
+				fmt.Println(strings.TrimRight(indented, " "))
+				return true
+			}
+		}
+	}
+
+	// Basic protobuf check: does it look like key-value pairs?
+	// This is a weak check and might have false positives.
+	if len(data) == 0 || (data[0]&0x07) > 5 {
+		return false
+	}
+
+	// Attempt a generic parse if no schemas match or are loaded
+	var out strings.Builder
+	p := data
+	valid := false
+	for len(p) > 0 {
+		field, n := binary.Uvarint(p)
+		if n <= 0 {
+			break
+		}
+		p = p[n:]
+		fieldNum := field >> 3
+		wireType := field & 0x07
+
+		var valStr string
+		switch wireType {
+		case 0: // Varint
+			val, n := binary.Uvarint(p)
+			if n <= 0 {
+				break
+			}
+			p = p[n:]
+			valStr = fmt.Sprintf("%d", val)
+		case 1: // 64-bit
+			if len(p) < 8 {
+				p = nil
+				break
+			}
+			valStr = fmt.Sprintf("0x%x", p[:8])
+			p = p[8:]
+		case 2: // Length-delimited
+			l, n := binary.Uvarint(p)
+			if n <= 0 || len(p) < int(l)+n {
+				p = nil
+				break
+			}
+			p = p[n:]
+			payload := p[:l]
+			if isMostlyPrintable(payload) {
+				valStr = fmt.Sprintf("\"%s\"", string(payload))
+			} else {
+				valStr = fmt.Sprintf("bytes(%d)", l)
+			}
+			p = p[l:]
+		case 5: // 32-bit
+			if len(p) < 4 {
+				p = nil
+				break
+			}
+			valStr = fmt.Sprintf("0x%x", p[:4])
+			p = p[4:]
+		default: // 3 (group start) and 4 (group end) are deprecated
+			return false // Invalid wire type
+		}
+		if len(p) == 0 {
+			valid = true // reached end of buffer cleanly
+		}
+		out.WriteString(fmt.Sprintf("    Field %d (type %d): %s\n", fieldNum, wireType, valStr))
+	}
+
+	if valid {
+		fmt.Printf("    %sDetected Format: Protobuf%s (generic decode, no schema)\n", packetTypeColor, colorReset)
+		fmt.Print(out.String())
+		return true
+	}
+
+	return false
 }
 
 func handlePlaintextOrHex(data []byte) {

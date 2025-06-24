@@ -25,6 +25,29 @@ The proxy supports the following command-line flags:
 go run mqtt_mitm_proxy.go --listen 127.0.0.1:8888 --broker internal.broker.local:8883 --proxy-cert proxy.crt --proxy-key proxy.key --verbose
 ```
 
+### Payload Analysis
+
+The proxy automatically analyzes and decodes PUBLISH message payloads to provide human-readable output. It supports a variety of data formats, which are detected and parsed in the following order:
+
+*   **Binary Formats**:
+    *   MessagePack
+    *   CBOR
+    *   BSON
+    *   Protobuf (requires `.proto` schema files to be provided via the `--proto` flag)
+*   **Text-based Formats**:
+    *   JWT (JSON Web Token) - includes signature verification if a key is provided via `--jwt-key`.
+    *   JSON (with auto-correction for single quotes)
+    *   XML
+    *   YAML
+*   **Encoded Strings**:
+    *   Base64
+    *   Hex
+*   **Fallback**:
+    *   Plaintext (if the payload is mostly printable text)
+    *   Binary (displayed as a hex dump if no other format is detected)
+
+This tiered approach ensures that complex, structured binary formats are correctly identified before falling back to more generic text-based or encoded formats.
+
 ## Certificate Generation (`gen_certs.go`)
 
 This proxy requires server certificates to intercept TLS traffic. The `gen_certs.go` tool helps you generate the necessary `proxy.crt` and `proxy.key` files.
