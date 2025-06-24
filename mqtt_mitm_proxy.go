@@ -892,6 +892,7 @@ func isMostlyPrintable(s string) bool {
 
 func printProxyUsage() {
 	fmt.Println("MQTT Interception Proxy")
+	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)\n")
 	fmt.Println("Usage: go run mqtt_mitm_proxy.go [flags]")
 	fmt.Println("\nFlags:")
 	fmt.Println("  --listen <addr:port>      Address and port for the proxy to listen on (default: :8883)")

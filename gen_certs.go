@@ -1,3 +1,9 @@
+/*
+ * Certificate generator
+ * Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)
+ * Released under BSD 3-clause license
+*/
+
 package main
 
 import (
@@ -38,6 +44,8 @@ func main() {
 }
 
 func printUsage() {
+	fmt.Println("Certificate generator for MQTT Proxy")
+	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)\n")
 	fmt.Println("Usage: go run gen_certs.go <subcommand> [options]")
 	fmt.Println("\nSubcommands:")
 	fmt.Println("  fetch   Fetch a remote certificate and clone it.")
