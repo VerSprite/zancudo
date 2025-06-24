@@ -23,6 +23,8 @@ import (
 )
 
 func main() {
+	log.SetFlags(0)
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
