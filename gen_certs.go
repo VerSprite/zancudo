@@ -44,12 +44,16 @@ func printUsage() {
 	fmt.Println("          Usage: go run gen_certs.go fetch <hostname:port> [flags]")
 	fmt.Println("  clone   Clone a local certificate file.")
 	fmt.Println("          Usage: go run gen_certs.go clone <path_to_cert.pem> [flags]")
-	fmt.Println("\nFlags can be seen by running the subcommand with -h, e.g.:")
+	fmt.Println("\nFlags:")
+	fmt.Println("  --proxy-hostname <host>   Hostname or IP to issue the new certificate for (instead of the original's).")
+	fmt.Println("  --out-cert <path>         Output path for the new certificate (default: \"proxy.crt\").")
+	fmt.Println("  --out-key <path>          Output path for the new private key (default: \"proxy.key\").")
+	fmt.Println("\nCA Signing Options:")
+	fmt.Println("  --ca-cert <path>          Path to the CA certificate file for signing.")
+	fmt.Println("  --ca-key <path>           Path to the CA private key file for signing.")
+	fmt.Println("  --gen-ca                  Generate a new root CA and use it for signing (saved as ca.crt and ca.key).")
+	fmt.Println("\nFlags can also be seen by running the subcommand with -h, e.g.:")
 	fmt.Println("  go run gen_certs.go fetch -h")
-	fmt.Println("\nCA Signing Options (for fetch and clone):")
-	fmt.Println("  --ca-cert <path>   Path to the CA certificate file for signing.")
-	fmt.Println("  --ca-key <path>    Path to the CA private key file for signing.")
-	fmt.Println("  --gen-ca           Generate a new root CA and use it for signing (saved as ca.crt and ca.key).")
 }
 
 func addCASigningFlags(fs *flag.FlagSet) (*string, *string, *bool) {
