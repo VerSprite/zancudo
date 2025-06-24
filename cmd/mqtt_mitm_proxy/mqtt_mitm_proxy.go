@@ -37,6 +37,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/amazon-ion/ion-go/ion"
+	"github.com/dop251/goja"
 	"github.com/jmank88/ubjson"
 	"github.com/zencoder/go-smile/smile"
 )
@@ -107,6 +108,12 @@ var (
 	messageDescriptors []*desc.MessageDescriptor
 )
 
+// Scripting engine
+var (
+	scriptPath string
+	jsEngine   *ScriptEngine
+)
+
 // Custom type to allow a flag to be specified multiple times
 type multiStringFlag []string
 
@@ -117,6 +124,73 @@ func (m *multiStringFlag) String() string {
 func (m *multiStringFlag) Set(value string) error {
 	*m = append(*m, value)
 	return nil
+}
+
+// --- Scripting Engine ---
+
+type ScriptEngine struct {
+	vm             *goja.Runtime
+	handlePacket   goja.Callable
+	analyzePayload goja.Callable
+}
+
+func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
+	scriptBytes, err := os.ReadFile(scriptPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not read script file: %w", err)
+	}
+
+	vm := goja.New()
+
+	// Expose console.log to the script
+	vm.Set("console", map[string]interface{}{
+		"log": func(args ...interface{}) {
+			var parts []string
+			for _, arg := range args {
+				parts = append(parts, fmt.Sprintf("%v", arg))
+			}
+			log.Println(strings.Join(parts, " "))
+		},
+	})
+
+	// Execute the script
+	_, err = vm.RunScript(filepath.Base(scriptPath), string(scriptBytes))
+	if err != nil {
+		return nil, fmt.Errorf("error executing script: %w", err)
+	}
+
+	engine := &ScriptEngine{vm: vm}
+
+	// Get exported functions from module.exports
+	var exports *goja.Object
+	if module := vm.Get("module"); module != nil {
+		if obj, ok := module.ToObject(vm).Get("exports").(*goja.Object); ok {
+			exports = obj
+		}
+	}
+	if exports == nil {
+		exports = vm.GlobalObject()
+	}
+
+	// Get a reference to the handlePacket function
+	if handlePacket := exports.Get("handlePacket"); handlePacket != nil && !goja.IsUndefined(handlePacket) && !goja.IsNull(handlePacket) {
+		if fn, ok := goja.AssertFunction(handlePacket); ok {
+			engine.handlePacket = fn
+		}
+	}
+
+	// Get a reference to the analyzePayload function
+	if analyzePayload := exports.Get("analyzePayload"); analyzePayload != nil && !goja.IsUndefined(analyzePayload) && !goja.IsNull(analyzePayload) {
+		if fn, ok := goja.AssertFunction(analyzePayload); ok {
+			engine.analyzePayload = fn
+		}
+	}
+
+	if engine.handlePacket == nil && engine.analyzePayload == nil {
+		return nil, fmt.Errorf("script must export at least one of 'handlePacket' or 'analyzePayload'")
+	}
+
+	return engine, nil
 }
 
 // MQTT packet buffer for handling fragmented packets
@@ -752,10 +826,24 @@ func handleConnection(clientConn net.Conn, username, password string) {
 				}
 			}
 
+			// Process packets with script
+			finalPackets := make([][]byte, 0, len(packetsToSend))
+			for _, packet := range packetsToSend {
+				processedPacket, err := applyScriptToPacket(packet, "C→S")
+				if err != nil {
+					log.Printf("[!] Error applying script to C→S packet: %v", err)
+					continue
+				}
+				if processedPacket != nil {
+					finalPackets = append(finalPackets, processedPacket)
+				}
+			}
+			packetsToSend = finalPackets
+
 			// Process packets for analysis
 			processMQTTPackets("C→S", packetsToSend)
 
-			// Send all original packets
+			// Send all packets
 			for _, packet := range packetsToSend {
 				_, err = serverSideConn.Write(packet)
 				if err != nil {
@@ -781,10 +869,24 @@ func handleConnection(clientConn net.Conn, username, password string) {
 		// Extract complete packets
 		packets := serverToClientBuffer.extractCompletePackets()
 
+		// Process packets with script
+		finalPackets := make([][]byte, 0, len(packets))
+		for _, packet := range packets {
+			processedPacket, err := applyScriptToPacket(packet, "S→C")
+			if err != nil {
+				log.Printf("[!] Error applying script to S→C packet: %v", err)
+				continue
+			}
+			if processedPacket != nil {
+				finalPackets = append(finalPackets, processedPacket)
+			}
+		}
+		packets = finalPackets
+
 		// Process packets for analysis
 		processMQTTPackets("S→C", packets)
 
-		// Send all original packets
+		// Send all packets
 		for _, packet := range packets {
 			_, err = clientSideConn.Write(packet)
 			if err != nil {
@@ -943,6 +1045,7 @@ func printProxyUsage() {
 	fmt.Println("  --pass <password>         Password for MQTT authentication (replaces client's password if any)")
 	fmt.Println("  --verbose, -v             Enable verbose output")
 	fmt.Println("  --no-color                Disable colored output (useful for piping to files).")
+	fmt.Println("  --script <path>           Path to a JavaScript file for extending the proxy.")
 }
 
 func main() {
@@ -962,6 +1065,7 @@ func main() {
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
 	flag.BoolVar(&vShorthand, "v", false, "Enable verbose output (shorthand)")
 	flag.BoolVar(&noColor, "no-color", false, "Disable colorized output")
+	flag.StringVar(&scriptPath, "script", "", "Path to a JavaScript file for extending the proxy.")
 
 	flag.Parse()
 
@@ -987,6 +1091,15 @@ func main() {
 		colorBold          = ""
 		colorBrightMagenta = ""
 		colorBrightWhite   = ""
+	}
+
+	if scriptPath != "" {
+		var err error
+		jsEngine, err = newScriptEngine(scriptPath)
+		if err != nil {
+			log.Fatalf("[!] Failed to load script: %v", err)
+		}
+		log.Printf("JavaScript extension loaded from %s", scriptPath)
 	}
 
 	if len(protoPaths) > 0 {
@@ -1104,6 +1217,17 @@ func processPayload(data []byte) {
 	if len(data) == 0 {
 		fmt.Println("    (empty payload)")
 		return
+	}
+
+	// Try scripting engine first
+	if jsEngine != nil && jsEngine.analyzePayload != nil {
+		jsResult, err := jsEngine.analyzePayload(goja.Undefined(), jsEngine.vm.ToValue(jsEngine.vm.NewArrayBuffer(data)))
+		if err != nil {
+			log.Printf("[!] Scripted payload analysis failed: %v", err)
+		} else if !goja.IsUndefined(jsResult) && !goja.IsNull(jsResult) {
+			fmt.Printf("    %s\n", jsResult.String())
+			return
+		}
 	}
 
 	// For text-based formats, trim whitespace.
@@ -1738,4 +1862,88 @@ func handlePlaintextOrHex(data []byte) {
 		fmt.Printf("    %sDetected Format: Binary Data%s\n", packetTypeColor, colorReset)
 		fmt.Print(hex.Dump(data))
 	}
+}
+
+func rebuildPublishPacket(topic string, payload []byte, flags byte, packetID []byte) []byte {
+	var packet bytes.Buffer
+	packet.WriteByte(PUBLISH<<4 | flags)
+
+	var variableHeaderAndPayload bytes.Buffer
+	variableHeaderAndPayload.Write(encodeString(topic))
+	if (flags>>1)&0x03 > 0 {
+		variableHeaderAndPayload.Write(packetID)
+	}
+	variableHeaderAndPayload.Write(payload)
+
+	packet.Write(encodeLength(variableHeaderAndPayload.Len()))
+	packet.Write(variableHeaderAndPayload.Bytes())
+
+	return packet.Bytes()
+}
+
+func applyScriptToPacket(packet []byte, direction string) ([]byte, error) {
+	if jsEngine == nil || jsEngine.handlePacket == nil {
+		return packet, nil
+	}
+
+	// 1. Parse the packet to create the JS object
+	packetType := (packet[0] >> 4) & 0x0F
+	flags := packet[0] & 0x0F
+	_, headerEnd := decodeLength(packet, 1)
+	payload := packet[headerEnd:]
+
+	jsPacket := make(map[string]interface{})
+	jsPacket["direction"] = direction
+	jsPacket["type"] = getPacketTypeName(packetType)
+	jsPacket["raw"] = jsEngine.vm.NewArrayBuffer(packet)
+	jsPacket["modifiable"] = false
+
+	var originalPacketID []byte
+
+	if packetType == PUBLISH {
+		jsPacket["modifiable"] = true
+		topic, offset := decodeString(payload, 0)
+		jsPacket["topic"] = topic
+		jsPacket["qos"] = (flags >> 1) & 0x03
+		jsPacket["retain"] = (flags & 0x01) != 0
+
+		if jsPacket["qos"].(byte) > 0 {
+			if len(payload) >= offset+2 {
+				originalPacketID = payload[offset : offset+2]
+				offset += 2
+			}
+		}
+		jsPacket["payload"] = jsEngine.vm.NewArrayBuffer(payload[offset:])
+	}
+
+	// 2. Call the script function
+	result, err := jsEngine.handlePacket(goja.Undefined(), jsEngine.vm.ToValue(jsPacket))
+	if err != nil {
+		return nil, fmt.Errorf("script execution failed: %w", err)
+	}
+
+	// 3. Process the result
+	if result.Export() == nil { // Dropped
+		return nil, nil
+	}
+
+	// 4. Rebuild if modified
+	if jsPacket["modifiable"].(bool) {
+		modifiedPacket, ok := result.Export().(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("script must return an object or null")
+		}
+
+		newTopic := modifiedPacket["topic"].(string)
+		newPayloadValue, ok := modifiedPacket["payload"].(goja.ArrayBuffer)
+		if !ok {
+			return nil, fmt.Errorf("modified payload must be a Uint8Array (or ArrayBuffer in Go)")
+		}
+		newPayload := newPayloadValue.Bytes()
+		newFlags := flags // TODO: Allow modifying QoS/Retain
+
+		return rebuildPublishPacket(newTopic, newPayload, newFlags, originalPacketID), nil
+	}
+
+	return packet, nil
 }

@@ -4,6 +4,7 @@ go 1.24.4
 
 require (
 	github.com/amazon-ion/ion-go v1.5.0
+	github.com/dop251/goja v0.0.0-20250531102226-cb187b08699c
 	github.com/fxamacker/cbor/v2 v2.8.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/jhump/protoreflect v1.17.0
@@ -16,10 +17,14 @@ require (
 
 require (
 	github.com/bufbuild/protocompile v0.14.1 // indirect
+	github.com/dlclark/regexp2 v1.11.4 // indirect
+	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/text v0.17.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )

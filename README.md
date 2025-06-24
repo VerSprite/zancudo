@@ -111,3 +111,122 @@ By default, generated certificates are self-signed. For clients that require a t
     go run gen_certs.go fetch --ca-cert /path/to/ca.crt test.mosquitto.org:8883
     ```
 This will generate `ca.crt` and `ca.key` based on the provided template, then use them for signing.
+
+## Scripting with JavaScript
+
+The proxy can be extended with custom logic using JavaScript. You can intercept, modify, drop packets, and add custom payload decoders.
+
+To load a script, use the `--script` command-line flag:
+
+```sh
+go run ./cmd/mqtt_mitm_proxy --script ./cmd/mqtt_mitm_proxy/example.js --listen :1883 --broker test.mosquitto.org:1883
+```
+
+The script is a standard JavaScript file that can export two special functions: `handlePacket` and `analyzePayload`. You don't need to export both; the proxy will only call the ones it finds.
+
+```javascript
+// example.js
+
+// This function is called for every MQTT packet.
+// It can inspect, modify, or drop packets.
+function handlePacket(packet) {
+  // ...
+}
+
+// This function is called for every PUBLISH payload.
+// It can decode and format payloads for logging.
+function analyzePayload(payload) {
+  // ...
+}
+
+module.exports = {
+  handlePacket,
+  analyzePayload,
+};
+```
+
+### `handlePacket(packet)`
+
+This function is called for every packet flowing through the proxy. It receives a `packet` object as an argument.
+
+The primary use cases are:
+1.  **Inspecting traffic**: You can log details of any packet.
+2.  **Dropping packets**: If `handlePacket` returns `null`, the packet will be dropped and not forwarded.
+3.  **Modifying packets**: For certain packet types, the `packet` object contains mutable fields. Changing them will alter the packet that gets forwarded.
+
+The `packet` object has the following common properties:
+
+*   `direction` (string): The direction of the packet. Either `"C->S"` (Client to Server) or `"S->C"` (Server to Client). Read-only.
+*   `type` (string): The MQTT packet type, e.g., `"PUBLISH"`, `"CONNECT"`. Read-only.
+*   `raw` (Uint8Array): The raw bytes of the packet. If you modify this directly, your changes will be sent, but this is for advanced use. It's easier to modify the parsed fields.
+*   `modifiable` (boolean): `true` if the packet has parsed, mutable fields.
+
+**Modifiable PUBLISH Packets**
+
+If `packet.type` is `"PUBLISH"`, `modifiable` will be `true` and the following fields are available and can be changed:
+
+*   `topic` (string): The topic of the message.
+*   `payload` (Uint8Array): The payload of the message. You can replace this with a new `Uint8Array`.
+*   `qos` (integer): The Quality of Service level (0, 1, or 2).
+*   `retain` (boolean): The retain flag.
+
+**Example: Modifying and Dropping Packets**
+
+```javascript
+function handlePacket(packet) {
+  // Log every packet
+  console.log(`[JS] Intercepted ${packet.direction} ${packet.type}`);
+
+  // Check if it's a PUBLISH packet we can modify
+  if (packet.modifiable && packet.type === "PUBLISH") {
+
+    // Drop all messages going to 'private/topic'
+    if (packet.topic === 'private/topic') {
+      console.log(`[JS] Dropping packet to ${packet.topic}`);
+      return null; // Drop the packet
+    }
+
+    // Modify payload for topic 'test/hello'
+    if (packet.topic === 'test/hello') {
+      console.log(`[JS] Modifying payload for ${packet.topic}`);
+      const newPayloadStr = "Hello from JavaScript! The original message was: " + new TextDecoder().decode(packet.payload);
+      packet.payload = new TextEncoder().encode(newPayloadStr);
+    }
+  }
+
+  // Return the packet object to forward it.
+  // Note: you don't need to return packet.raw, returning the object is enough.
+  return packet;
+}
+```
+
+### `analyzePayload(payload)`
+
+This function is called by the proxy's analysis engine when it receives a `PUBLISH` packet. It allows you to add custom logic to decode and pretty-print payloads.
+
+*   `payload` (Uint8Array): The raw payload from a `PUBLISH` packet.
+
+The function should return:
+*   A `string` containing the formatted analysis of the payload. This string will be printed to the console, and the built-in analyzers (JSON, Protobuf, etc.) will be skipped.
+*   `null` or `undefined` if your analyzer cannot handle this payload. The proxy will then proceed with its own analyzers.
+
+**Example: Custom Payload Analyzer**
+
+```javascript
+function analyzePayload(payload) {
+  // A custom format: "MyFormat:<some_text>"
+  const text = new TextDecoder().decode(payload);
+  if (text.startsWith("MyFormat:")) {
+    const content = text.substring("MyFormat:".length);
+    // Return a formatted string for the log
+    return `[JS] Detected My Custom Format\n      Content: ${content}`;
+  }
+
+  // If it's not our format, return null to let the proxy handle it.
+  return null;
+}
+```
+
+### `console.log`
+
+You can use `console.log` within your script to print messages to the proxy's console. This is useful for debugging your script.
