@@ -1,11 +1,4 @@
 *.crt
 *.key
 *.pem
-mqtt_mitm_proxy
-mqtt_mitm_proxy_darwin_amd64
-mqtt_mitm_proxy_darwin_arm64
-mqtt_mitm_proxy.exe
-gen_certs
-gen_certs_darwin_amd64
-gen_certs_darwin_arm64
-gen_certs.exe
+bin/

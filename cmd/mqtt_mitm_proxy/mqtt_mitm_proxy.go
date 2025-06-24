@@ -9,15 +9,26 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/rsa"
+	"crypto/ecdsa"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"os"
+	"strings"
 	"time"
+	"unicode"
+
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/vmihailenco/msgpack/v5"
+	"gopkg.in/yaml.v3"
 )
 
 // MQTT packet types
@@ -77,8 +88,22 @@ var (
 	username string
 	password string
 
-	verbose bool
+	verbose       bool
+	jwtVerifyKeys multiStringFlag
+	loadedJWTKeys []interface{}
 )
+
+// Custom type to allow a flag to be specified multiple times
+type multiStringFlag []string
+
+func (m *multiStringFlag) String() string {
+	return fmt.Sprintf("%v", *m)
+}
+
+func (m *multiStringFlag) Set(value string) error {
+	*m = append(*m, value)
+	return nil
+}
 
 // MQTT packet buffer for handling fragmented packets
 type MQTTBuffer struct {
@@ -347,10 +372,10 @@ func analyzeMQTTPacket(direction string, data []byte) {
 		if len(payload) > 0 {
 			log.Printf("Payload (%d bytes): %s", len(payload), hex.EncodeToString(payload))
 			asciiPayload := hexToASCII(payload)
-			if isMostlyPrintable(asciiPayload) {
+			if isMostlyPrintable([]byte(asciiPayload)) {
 				log.Printf("Payload (ASCII): %s%s%s", payloadColor, asciiPayload, colorReset)
 			} else {
-				log.Printf("Payload (ASCII): %s", asciiPayload)
+				log.Printf("Payload (Hex): %s", hex.EncodeToString(payload))
 			}
 		}
 	}
@@ -360,7 +385,7 @@ func analyzeMQTTPacket(direction string, data []byte) {
 
 func analyzeCONNACK(payload []byte) {
 	if len(payload) < 2 {
-		log.Printf("    [❌ Broken CONNACK packet: expected 2 bytes, got %d]", len(payload))
+		log.Printf("    [Broken CONNACK packet: expected 2 bytes, got %d]", len(payload))
 		return
 	}
 
@@ -374,17 +399,17 @@ func analyzeCONNACK(payload []byte) {
 	case 0:
 		returnCodeStr = "Connection Accepted"
 	case 1:
-		returnCodeStr = "❌ Connection Refused: unacceptable protocol version"
+		returnCodeStr = "[!] Connection Refused: unacceptable protocol version"
 	case 2:
-		returnCodeStr = "❌ Connection Refused: identifier rejected"
+		returnCodeStr = "[!] Connection Refused: identifier rejected"
 	case 3:
-		returnCodeStr = "❌ Connection Refused: server unavailable"
+		returnCodeStr = "[!] Connection Refused: server unavailable"
 	case 4:
-		returnCodeStr = "❌ Connection Refused: bad user name or password"
+		returnCodeStr = "[!] Connection Refused: bad user name or password"
 	case 5:
-		returnCodeStr = "❌ Connection Refused: not authorized"
+		returnCodeStr = "[!] Connection Refused: not authorized"
 	default:
-		returnCodeStr = fmt.Sprintf("❌ Connection Refused: unknown reason (%d)", returnCode)
+		returnCodeStr = fmt.Sprintf("[!] Connection Refused: unknown reason (%d)", returnCode)
 	}
 	log.Printf("    Return Code: %s", returnCodeStr)
 }
@@ -398,7 +423,7 @@ func analyzeCONNECT(payload []byte) {
 	offset = newOffset
 
 	if offset >= len(payload) {
-		log.Printf("    [❌ Broken CONNECT packet: missing protocol level]")
+		log.Printf("    [Broken CONNECT packet: missing protocol level]")
 		return
 	}
 	protoLevel := payload[offset]
@@ -406,7 +431,7 @@ func analyzeCONNECT(payload []byte) {
 	offset++
 
 	if offset >= len(payload) {
-		log.Printf("    [❌ Broken CONNECT packet: missing connect flags]")
+		log.Printf("    [Broken CONNECT packet: missing connect flags]")
 		return
 	}
 	flags := payload[offset]
@@ -429,7 +454,7 @@ func analyzeCONNECT(payload []byte) {
 	offset++
 
 	if offset+1 >= len(payload) {
-		log.Printf("    [❌ Broken CONNECT packet: missing keep-alive]")
+		log.Printf("    [Broken CONNECT packet: missing keep-alive]")
 		return
 	}
 	keepAlive := int(payload[offset])<<8 | int(payload[offset+1])
@@ -439,7 +464,7 @@ func analyzeCONNECT(payload []byte) {
 	// Client ID
 	clientID, newOffset := decodeString(payload, offset)
 	if newOffset == offset {
-		log.Printf("    [❌ Broken CONNECT packet: could not decode Client ID]")
+		log.Printf("    [Broken CONNECT packet: could not decode Client ID]")
 		return
 	}
 	log.Printf("    Client ID: %s", clientID)
@@ -449,7 +474,7 @@ func analyzeCONNECT(payload []byte) {
 	if willFlag {
 		willTopic, newOffset := decodeString(payload, offset)
 		if newOffset == offset && len(willTopic) == 0 {
-			log.Printf("    [❌ Broken CONNECT packet: could not decode Will Topic]")
+			log.Printf("    [Broken CONNECT packet: could not decode Will Topic]")
 			return
 		}
 		log.Printf("    Will Topic: %s", willTopic)
@@ -457,13 +482,13 @@ func analyzeCONNECT(payload []byte) {
 
 		// Decode Will Message (binary payload)
 		if offset+2 > len(payload) {
-			log.Printf("    [❌ Broken CONNECT packet: missing Will Message length]")
+			log.Printf("    [Broken CONNECT packet: missing Will Message length]")
 			return
 		}
 		msgLen := int(payload[offset])<<8 | int(payload[offset+1])
 		offset += 2
 		if offset+msgLen > len(payload) {
-			log.Printf("    [❌ Broken CONNECT packet: missing Will Message body]")
+			log.Printf("    [Broken CONNECT packet: missing Will Message body]")
 			return
 		}
 		willMessage := payload[offset : offset+msgLen]
@@ -475,7 +500,7 @@ func analyzeCONNECT(payload []byte) {
 	if userFlag {
 		userName, newOffset := decodeString(payload, offset)
 		if newOffset == offset {
-			log.Printf("    [❌ Broken CONNECT packet: could not decode User Name]")
+			log.Printf("    [Broken CONNECT packet: could not decode User Name]")
 			return
 		}
 		log.Printf("    User Name: %s", userName)
@@ -486,13 +511,13 @@ func analyzeCONNECT(payload []byte) {
 	if passFlag {
 		// Decode Password (binary payload)
 		if offset+2 > len(payload) {
-			log.Printf("    [❌ Broken CONNECT packet: missing Password length]")
+			log.Printf("    [Broken CONNECT packet: missing Password length]")
 			return
 		}
 		msgLen := int(payload[offset])<<8 | int(payload[offset+1])
 		offset += 2
 		if offset+msgLen > len(payload) {
-			log.Printf("    [❌ Broken CONNECT packet: missing Password body]")
+			log.Printf("    [Broken CONNECT packet: missing Password body]")
 			return
 		}
 		password := payload[offset : offset+msgLen]
@@ -502,36 +527,30 @@ func analyzeCONNECT(payload []byte) {
 }
 
 func analyzePUBLISH(payload []byte, flags byte, direction string) {
-	offset := 0
+	topic, offset := decodeString(payload, 0)
+	fmt.Printf("  Topic: %s%s%s\n", topicColor, topic, colorReset)
 
-	qos := (flags >> 1) & 0x03
-	retain := (flags & 0x01) != 0
-	dup := (flags & 0x08) != 0
-
-	log.Printf("QoS: %d, Retain: %t, Duplicate: %t", qos, retain, dup)
-
-	topic, newOffset := decodeString(payload, offset)
-	log.Printf("Topic: %s%s%s", topicColor, topic, colorReset)
-	offset = newOffset
-
-	if qos > 0 {
-		if offset+2 > len(payload) {
-			return
+	// Packet identifier is only present for QoS > 0
+	if (flags>>1)&0x03 > 0 {
+		if len(payload) >= offset+2 {
+			packetID := binary.BigEndian.Uint16(payload[offset:])
+			fmt.Printf("  Packet ID: %d\n", packetID)
+			offset += 2
 		}
-		packetID := int(payload[offset])<<8 | int(payload[offset+1])
-		log.Printf("Packet ID: %d", packetID)
-		offset += 2
 	}
 
-	if offset < len(payload) {
-		message := string(payload[offset:])
-		log.Printf("Message (Plain Text): %s%s%s", payloadColor, message, colorReset)
+	publishPayload := payload[offset:]
+	if verbose {
+		fmt.Printf("  %sOriginal Payload (%d bytes):%s\n%s\n", payloadColor, len(publishPayload), colorReset, hex.Dump(publishPayload))
 	}
+
+	fmt.Printf("  %sPayload:%s\n", payloadColor, colorReset)
+	processPayload(publishPayload)
 }
 
 func analyzeSUBSCRIBE(payload []byte, flags byte) {
 	if len(payload) < 2 {
-		log.Printf("    [❌ Broken SUBSCRIBE packet: missing packet identifier]")
+		log.Printf("    [Broken SUBSCRIBE packet: missing packet identifier]")
 		return
 	}
 	packetID := int(payload[0])<<8 | int(payload[1])
@@ -539,19 +558,19 @@ func analyzeSUBSCRIBE(payload []byte, flags byte) {
 	offset := 2
 
 	if flags&0x0F != 2 {
-		log.Printf("    [❌ Broken SUBSCRIBE packet: fixed header flags must be 0x02, but were 0x%01X]", flags&0x0F)
+		log.Printf("    [Broken SUBSCRIBE packet: fixed header flags must be 0x02, but were 0x%01X]", flags&0x0F)
 	}
 
 	for offset < len(payload) {
 		topic, newOffset := decodeString(payload, offset)
 		if newOffset == offset {
-			log.Printf("    [❌ Broken SUBSCRIBE packet: could not decode topic filter]")
+			log.Printf("    [Broken SUBSCRIBE packet: could not decode topic filter]")
 			break
 		}
 		offset = newOffset
 
 		if offset >= len(payload) {
-			log.Printf("    [❌ Broken SUBSCRIBE packet: missing QoS for topic '%s']", topic)
+			log.Printf("    [Broken SUBSCRIBE packet: missing QoS for topic '%s']", topic)
 			break
 		}
 		qos := payload[offset]
@@ -562,7 +581,7 @@ func analyzeSUBSCRIBE(payload []byte, flags byte) {
 
 func analyzeSUBACK(payload []byte) {
 	if len(payload) < 2 {
-		log.Printf("    [❌ Broken SUBACK packet: missing packet identifier]")
+		log.Printf("    [Broken SUBACK packet: missing packet identifier]")
 		return
 	}
 	packetID := int(payload[0])<<8 | int(payload[1])
@@ -582,7 +601,7 @@ func analyzeSUBACK(payload []byte) {
 		case 0x02:
 			result = "Success (Max QoS 2)"
 		case 0x80:
-			result = "❌ Failure"
+			result = "[!] Failure"
 		default:
 			result = fmt.Sprintf("Unknown (0x%02X)", returnCode)
 		}
@@ -594,7 +613,7 @@ func analyzeSUBACK(payload []byte) {
 
 func analyzeUNSUBSCRIBE(payload []byte, flags byte) {
 	if len(payload) < 2 {
-		log.Printf("    [❌ Broken UNSUBSCRIBE packet: missing packet identifier]")
+		log.Printf("    [Broken UNSUBSCRIBE packet: missing packet identifier]")
 		return
 	}
 	packetID := int(payload[0])<<8 | int(payload[1])
@@ -602,14 +621,14 @@ func analyzeUNSUBSCRIBE(payload []byte, flags byte) {
 	offset := 2
 
 	if flags&0x0F != 2 {
-		log.Printf("    [❌ Broken UNSUBSCRIBE packet: fixed header flags must be 0x02, but were 0x%01X]", flags&0x0F)
+		log.Printf("    [Broken UNSUBSCRIBE packet: fixed header flags must be 0x02, but were 0x%01X]", flags&0x0F)
 	}
 
 	log.Printf("    Topics to Unsubscribe:")
 	for offset < len(payload) {
 		topic, newOffset := decodeString(payload, offset)
 		if newOffset == offset {
-			log.Printf("    [❌ Broken UNSUBSCRIBE packet: could not decode topic filter]")
+			log.Printf("    [Broken UNSUBSCRIBE packet: could not decode topic filter]")
 			break
 		}
 		log.Printf("        - %s%s%s", topicColor, topic, colorReset)
@@ -619,7 +638,7 @@ func analyzeUNSUBSCRIBE(payload []byte, flags byte) {
 
 func analyzeSimpleAck(name string, payload []byte) {
 	if len(payload) < 2 {
-		log.Printf("    [❌ Broken %s packet: missing packet identifier]", name)
+		log.Printf("    [Broken %s packet: missing packet identifier]", name)
 		return
 	}
 	packetID := int(payload[0])<<8 | int(payload[1])
@@ -636,12 +655,12 @@ func handleConnection(clientConn net.Conn, username, password string) {
 		log.Printf("Proxy certificates provided, attempting TLS handshake with client.")
 		cert, err := tls.LoadX509KeyPair(proxyCertFile, proxyKeyFile)
 		if err != nil {
-			log.Printf("❌ Failed to load proxy certs: %v. Closing connection.", err)
+			log.Printf("[!] Failed to load proxy certs: %v. Closing connection.", err)
 			return
 		}
 		tlsClient := tls.Server(clientConn, &tls.Config{Certificates: []tls.Certificate{cert}})
 		if err := tlsClient.Handshake(); err != nil {
-			log.Printf("❌ TLS handshake with client failed: %v", err)
+			log.Printf("[!] TLS handshake with client failed: %v", err)
 			return
 		}
 		clientSideConn = tlsClient
@@ -656,7 +675,7 @@ func handleConnection(clientConn net.Conn, username, password string) {
 		log.Printf("Client certificates provided, attempting TLS connection to broker.")
 		clientCert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
 		if err != nil {
-			log.Printf("❌ Failed to load client certs: %v. Will not connect to broker.", err)
+			log.Printf("[!] Failed to load client certs: %v. Will not connect to broker.", err)
 			return // Cannot proceed
 		}
 		tlsServer, err := tls.Dial("tcp", brokerAddr, &tls.Config{
@@ -664,7 +683,7 @@ func handleConnection(clientConn net.Conn, username, password string) {
 			Certificates:       []tls.Certificate{clientCert},
 		})
 		if err != nil {
-			log.Printf("❌ Failed to connect to real broker with TLS: %v", err)
+			log.Printf("[!] Failed to connect to real broker with TLS: %v", err)
 			return
 		}
 		serverSideConn = tlsServer
@@ -673,7 +692,7 @@ func handleConnection(clientConn net.Conn, username, password string) {
 		log.Printf("Client certificates not provided. Connecting to broker with plaintext.")
 		tcpConn, err := net.Dial("tcp", brokerAddr)
 		if err != nil {
-			log.Printf("❌ Failed to connect to real broker with plaintext: %v", err)
+			log.Printf("[!] Failed to connect to real broker with plaintext: %v", err)
 			return
 		}
 		serverSideConn = tcpConn
@@ -709,7 +728,7 @@ func handleConnection(clientConn net.Conn, username, password string) {
 				var modified bool
 				packetsToSend, modified, err = modifyFirstConnectPacket(packets, username, password)
 				if err != nil {
-					log.Printf("❌ Error modifying CONNECT packet: %v", err)
+					log.Printf("[!] Error modifying CONNECT packet: %v", err)
 					serverSideConn.Close()
 					return
 				}
@@ -726,7 +745,7 @@ func handleConnection(clientConn net.Conn, username, password string) {
 			for _, packet := range packetsToSend {
 				_, err = serverSideConn.Write(packet)
 				if err != nil {
-					log.Printf("❌ [C→S] write error: %v", err)
+					log.Printf("[!] [C→S] write error: %v", err)
 					return
 				}
 			}
@@ -755,7 +774,7 @@ func handleConnection(clientConn net.Conn, username, password string) {
 		for _, packet := range packets {
 			_, err = clientSideConn.Write(packet)
 			if err != nil {
-				log.Printf("❌ [S→C] write error: %v", err)
+				log.Printf("[!] [S→C] write error: %v", err)
 				return
 			}
 		}
@@ -880,31 +899,36 @@ func rebuildConnectPacket(originalPacket []byte, newUsername, newPassword string
 }
 
 // Helper to check if a string is mostly printable ASCII
-func isMostlyPrintable(s string) bool {
-	printable := 0
-	for _, c := range s {
-		if c >= 32 && c <= 126 {
-			printable++
+func isMostlyPrintable(data []byte) bool {
+	s := string(data)
+	for _, r := range s {
+		if r == '\n' || r == '\r' || r == '\t' {
+			continue
+		}
+		if !unicode.IsPrint(r) {
+			return false
 		}
 	}
-	return len(s) > 0 && float64(printable)/float64(len(s)) > 0.8
+	return true
 }
 
 func printProxyUsage() {
 	fmt.Println("MQTT Interception Proxy")
 	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)\n")
-	fmt.Println("Usage: go run mqtt_mitm_proxy.go [flags]")
+	fmt.Println("Usage: mqtt_mitm_proxy [flags]")
 	fmt.Println("\nFlags:")
 	fmt.Println("  --listen <addr:port>      Address and port for the proxy to listen on (default: :8883)")
 	fmt.Println("  --broker <addr:port>      Address and port of the remote MQTT broker (default: test.mosquitto.org:8883)")
 	fmt.Println("  --proxy-cert <path>       Path to the proxy's server public certificate file. If empty, listens for plaintext.")
 	fmt.Println("  --proxy-key <path>        Path to the proxy's server private key file. If empty, listens for plaintext.")
 	fmt.Println("  --client-cert <path>      Path to the client's public certificate file. If empty, connects via plaintext.")
-	fmt.Println("  --client-key <path>       Path to the client's private key file. If empty, connects via plaintext.")
-	fmt.Println("  --user <username>         Username for broker authentication. Overwrites client's value if provided.")
-	fmt.Println("  --pass <password>         Password for broker authentication. Overwrites client's value if provided.")
+	fmt.Println("  --client-key <path>       Path to the client's private key file for authenticating with the broker")
+	fmt.Println("  --user <username>         Username for MQTT authentication (replaces client's username if any)")
+	fmt.Println("  --pass <password>         Password for MQTT authentication (replaces client's password if any)")
 	fmt.Println("  --verbose                 Enable verbose logging for detailed analysis.")
 	fmt.Println("  --no-color                Disable colored output (useful for piping to files).")
+	fmt.Fprintf(os.Stderr, "  --key <file>:        Path to a private key file (PEM format) for verifying JWT signatures. Can be specified multiple times.\n")
+	fmt.Fprintf(os.Stderr, "\n")
 }
 
 func main() {
@@ -916,11 +940,13 @@ func main() {
 	flag.StringVar(&proxyCertFile, "proxy-cert", "", "Path to the proxy's server public certificate file. If empty, listens for plaintext.")
 	flag.StringVar(&proxyKeyFile, "proxy-key", "", "Path to the proxy's server private key file. If empty, listens for plaintext.")
 	flag.StringVar(&clientCertFile, "client-cert", "", "Path to the client's public certificate file. If empty, connects via plaintext.")
-	flag.StringVar(&clientKeyFile, "client-key", "", "Path to the client's private key file. If empty, connects via plaintext.")
-	flag.StringVar(&username, "user", "", "Username for broker authentication. Overwrites client's value if provided.")
-	flag.StringVar(&password, "pass", "", "Password for broker authentication. Overwrites client's value if provided.")
-	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging for detailed analysis.")
-	flag.BoolVar(&noColor, "no-color", false, "Disable colored output (useful for piping to files)")
+	flag.StringVar(&clientKeyFile, "client-key", "", "Path to the client's private key file for authenticating with the broker")
+	flag.StringVar(&username, "user", "", "Username for MQTT authentication (replaces client's username if any)")
+	flag.StringVar(&password, "pass", "", "Password for MQTT authentication (replaces client's password if any)")
+	flag.BoolVar(&verbose, "v", false, "Enable verbose logging for detailed analysis.")
+	flag.BoolVar(&noColor, "no-color", false, "Disable colorized output")
+	flag.Var(&jwtVerifyKeys, "key", "Path to a private key file (PEM format) for verifying JWT signatures. Can be specified multiple times.")
+
 	flag.Parse()
 
 	if noColor {
@@ -944,19 +970,270 @@ func main() {
 		colorBrightWhite   = ""
 	}
 
+	// Load JWT verification keys
+	if len(jwtVerifyKeys) > 0 {
+		log.Println("Loading JWT verification keys...")
+		for _, keyPath := range jwtVerifyKeys {
+			pem, err := os.ReadFile(keyPath)
+			if err != nil {
+				log.Printf("  [!] Failed to read key file %s: %v", keyPath, err)
+				continue
+			}
+
+			key, err := jwt.ParseRSAPrivateKeyFromPEM(pem)
+			if err == nil {
+				loadedJWTKeys = append(loadedJWTKeys, key)
+				log.Printf("  [+] Loaded RSA key from %s", keyPath)
+				continue
+			}
+
+			key2, err := jwt.ParseECPrivateKeyFromPEM(pem)
+			if err == nil {
+				loadedJWTKeys = append(loadedJWTKeys, key2)
+				log.Printf("  [+] Loaded ECDSA key from %s", keyPath)
+				continue
+			}
+			log.Printf("  [!] Failed to parse key from %s (supports RSA/ECDSA PEM)", keyPath)
+		}
+	}
+
 	log.Printf("MQTT MITM proxy listening on %s%s%s", payloadColor, proxyListenAddr, colorReset)
 	log.Printf("Targeting broker: %s%s%s", payloadColor, brokerAddr, colorReset)
 
 	ln, err := net.Listen("tcp", proxyListenAddr)
 	if err != nil {
-		log.Fatalf("❌ Failed to listen: %v", err)
+		log.Fatalf("[!] Failed to listen: %v", err)
 	}
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Printf("❌ Accept error: %v", err)
+			log.Printf("[!] Accept error: %v", err)
 			continue
 		}
 		go handleConnection(conn, username, password)
+	}
+}
+
+// --- Payload Processing ---
+
+func processPayload(data []byte) {
+	// Trim whitespace as some formats are sensitive to it
+	trimmedData := bytes.TrimSpace(data)
+	if len(trimmedData) == 0 {
+		fmt.Println("    (empty payload)")
+		return
+	}
+
+	if tryJWT(trimmedData) {
+		return
+	}
+	if tryPrettifyJSON(trimmedData) {
+		return
+	}
+	if tryPrettifyXML(trimmedData) {
+		return
+	}
+	if tryMessagePack(trimmedData) {
+		return
+	}
+	if tryPrettifyYAML(trimmedData) {
+		return
+	}
+	if tryBase64(trimmedData) {
+		return
+	}
+
+	handlePlaintextOrHex(data) // Use original data for final fallback
+}
+
+func tryJWT(data []byte) bool {
+	tokenString := string(data)
+	if !strings.Contains(tokenString, ".") {
+		return false
+	}
+
+	// Basic parse to decode header and claims without verification first
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return false // Not a JWT
+	}
+
+	fmt.Printf("    %sDetected Format: JWT%s\n", packetTypeColor, colorReset)
+
+	// Pretty print header
+	headerJSON, _ := json.MarshalIndent(token.Header, "    ", "  ")
+	fmt.Printf("    %sHeader:%s\n%s\n", topicColor, colorReset, string(headerJSON))
+
+	// Pretty print claims
+	claimsJSON, _ := json.MarshalIndent(token.Claims, "    ", "  ")
+	fmt.Printf("    %sClaims:%s\n%s\n", topicColor, colorReset, string(claimsJSON))
+
+	// If keys are provided, verify signature
+	if len(loadedJWTKeys) > 0 {
+		fmt.Printf("    %sSignature Verification:%s\n", topicColor, colorReset)
+		verified := false
+		for i, key := range loadedJWTKeys {
+
+			// Re-parse the token, this time with the key for verification
+			_, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+				// The key is the private key, but for verification we need the public key.
+				switch k := key.(type) {
+				case *rsa.PrivateKey:
+					return &k.PublicKey, nil
+				case *ecdsa.PrivateKey:
+					return &k.PublicKey, nil
+				default:
+					return nil, fmt.Errorf("unsupported key type: %T", k)
+				}
+			})
+
+			keyIdentifier := fmt.Sprintf("key #%d", i+1)
+			if i < len(jwtVerifyKeys) {
+				keyIdentifier = jwtVerifyKeys[i]
+			}
+
+			if err == nil {
+				fmt.Printf("      %s[%s] SUCCESS%s\n", colorGreen, keyIdentifier, colorReset)
+				verified = true
+				break // Stop on first success
+			} else {
+				fmt.Printf("      %s[%s] FAILED: %v%s\n", colorRed, keyIdentifier, err, colorReset)
+			}
+		}
+		if !verified {
+			fmt.Printf("      %sSignature not valid with any of the provided keys.%s\n", colorRed, colorReset)
+		}
+	} else if len(jwtVerifyKeys) > 0 {
+		fmt.Printf("    %sSignature: %s(not verified, no valid keys were loaded)%s\n", topicColor, colorReset, colorReset)
+	} else {
+		fmt.Printf("    %sSignature: %s(not verified, no key provided)%s\n", topicColor, colorReset, colorReset)
+	}
+
+	return true
+}
+
+func tryPrettifyJSON(data []byte) bool {
+	var obj interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return false
+	}
+
+	// Avoid flagging simple strings, numbers, or booleans as a JSON object
+	switch obj.(type) {
+	case string, float64, bool:
+		return false
+	}
+
+	fmt.Printf("    %sDetected Format: JSON%s\n", packetTypeColor, colorReset)
+	pretty, err := json.MarshalIndent(obj, "    ", "  ")
+	if err != nil {
+		// This is unlikely to happen if unmarshaling succeeded
+		fmt.Printf("      Could not re-marshal JSON: %v\n", err)
+		return true // It was valid JSON, so we return true
+	}
+
+	fmt.Println(string(pretty))
+	return true
+}
+
+func tryMessagePack(data []byte) bool {
+	var v interface{}
+	if err := msgpack.Unmarshal(data, &v); err != nil {
+		return false
+	}
+	fmt.Printf("    %sDetected Format: MessagePack%s (decoded and shown as JSON)\n", packetTypeColor, colorReset)
+	pretty, err := json.MarshalIndent(v, "    ", "  ")
+	if err != nil {
+		// This should not happen if unmarshal to interface worked
+		fmt.Printf("      Could not convert to JSON: %v\n", err)
+		return true
+	}
+	fmt.Println(string(pretty))
+	return true
+}
+
+func tryBase64(data []byte) bool {
+	decoded, err := base64.StdEncoding.DecodeString(string(data))
+	if err != nil {
+		// Try URL encoding as a fallback
+		decoded, err = base64.URLEncoding.DecodeString(string(data))
+		if err != nil {
+			return false
+		}
+	}
+
+	// It's base64, but only process it if the decoded content is not the same as the original
+	// or if it's not printable (to avoid decoding simple printable strings that happen to be valid base64)
+	if !isMostlyPrintable(data) || !bytes.Equal(data, decoded) {
+		fmt.Printf("    %sDetected Format: Base64%s\n", packetTypeColor, colorReset)
+		fmt.Printf("    %s--- Begin Decoded Base64 ---%s\n", topicColor, colorReset)
+		processPayload(decoded) // Recursive call
+		fmt.Printf("    %s--- End Decoded Base64 ---%s\n", topicColor, colorReset)
+		return true
+	}
+
+	return false
+}
+
+func tryPrettifyXML(data []byte) bool {
+	if !bytes.HasPrefix(data, []byte("<")) {
+		return false
+	}
+	var out bytes.Buffer
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	encoder := xml.NewEncoder(&out)
+	encoder.Indent("    ", "  ")
+	for {
+		tok, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return false // Not valid XML
+		}
+		if err := encoder.EncodeToken(tok); err != nil {
+			return false // Should not happen
+		}
+	}
+	if err := encoder.Flush(); err != nil {
+		return false
+	}
+
+	fmt.Printf("    %sDetected Format: XML%s\n", packetTypeColor, colorReset)
+	fmt.Println(out.String())
+	return true
+}
+
+func tryPrettifyYAML(data []byte) bool {
+	var v interface{}
+	if err := yaml.Unmarshal(data, &v); err != nil {
+		return false
+	}
+
+	// Check for simple strings that can be parsed as YAML but are not maps or slices
+	if _, ok := v.(string); ok && !strings.Contains(string(data), "\n") {
+		return false
+	}
+
+	fmt.Printf("    %sDetected Format: YAML%s\n", packetTypeColor, colorReset)
+	out, err := yaml.Marshal(v) // yaml.Marshal provides good enough formatting
+	if err != nil {
+		return false
+	}
+	// Indent for display
+	indented := "    " + strings.ReplaceAll(string(out), "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indented, " "))
+	return true
+}
+
+func handlePlaintextOrHex(data []byte) {
+	if isMostlyPrintable(data) {
+		fmt.Printf("    %sDetected Format: Plaintext%s\n", packetTypeColor, colorReset)
+		// Indent the text for display
+		indented := "    " + strings.ReplaceAll(string(data), "\n", "\n    ")
+		fmt.Println(indented)
+	} else {
+		fmt.Printf("    %sDetected Format: Binary Data%s\n", packetTypeColor, colorReset)
+		fmt.Print(hex.Dump(data))
 	}
 }
