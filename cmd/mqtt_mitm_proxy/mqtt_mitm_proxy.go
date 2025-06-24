@@ -35,6 +35,10 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 	"go.mongodb.org/mongo-driver/bson"
 	"gopkg.in/yaml.v3"
+
+	"github.com/amazon-ion/ion-go/ion"
+	"github.com/jmank88/ubjson"
+	"github.com/zencoder/go-smile/smile"
 )
 
 // MQTT packet types
@@ -1102,7 +1106,24 @@ func processPayload(data []byte) {
 		return
 	}
 
+	// For text-based formats, trim whitespace.
+	trimmedData := bytes.TrimSpace(data)
+
+	// We must check for JSON *before* Ion, because JSON is a subset of the Ion
+	// text format. A JSON payload will be successfully parsed by an Ion parser.
+	if len(trimmedData) > 0 {
+		if tryPrettifyJSON(trimmedData) {
+			return
+		}
+	}
+
 	// Try binary formats that are whitespace-sensitive with the original data.
+	if trySmile(data) {
+		return
+	}
+	if tryIon(data) {
+		return
+	}
 	if tryMessagePack(data) {
 		return
 	}
@@ -1112,19 +1133,16 @@ func processPayload(data []byte) {
 	if tryBSON(data) {
 		return
 	}
+	if tryUBJSON(data) {
+		return
+	}
 	if tryProtobuf(data) {
 		return
 	}
 
-	// For text-based formats, trim whitespace.
-	trimmedData := bytes.TrimSpace(data)
-
-	// If after trimming, the payload is not empty, check text formats.
+	// If after trimming, the payload is not empty, check other text formats.
 	if len(trimmedData) > 0 {
 		if tryJWT(trimmedData) {
-			return
-		}
-		if tryPrettifyJSON(trimmedData) {
 			return
 		}
 		if tryPrettifyXML(trimmedData) {
@@ -1515,6 +1533,8 @@ func tryProtobuf(data []byte) bool {
 				return true
 			}
 		}
+		// If schemas were provided but none matched, do not fall back to guesswork.
+		return false
 	}
 
 	// Basic protobuf check: does it look like key-value pairs?
@@ -1589,6 +1609,123 @@ func tryProtobuf(data []byte) bool {
 	}
 
 	return false
+}
+
+func tryIon(data []byte) bool {
+	// Heuristic to avoid false positives on simple strings/numbers that are valid Ion text.
+	isBinaryIon := bytes.HasPrefix(data, []byte{0xE0, 0x01, 0x00, 0xEA})
+
+	var values []interface{}
+	dec := ion.NewDecoder(ion.NewReader(bytes.NewReader(data)))
+
+	for {
+		val, err := dec.Decode()
+		if err == io.EOF || err == ion.ErrNoInput {
+			break
+		}
+		if err != nil {
+			// If we fail at any point, it's not valid Ion we can parse.
+			return false
+		}
+		values = append(values, val)
+	}
+
+	if len(values) == 0 {
+		return false
+	}
+
+	// Now, check if it was just a simple primitive.
+	if len(values) == 1 {
+		isComplex := false
+		switch values[0].(type) {
+		case map[string]interface{}, []interface{}:
+			isComplex = true
+		}
+		if !isComplex && !isBinaryIon {
+			return false // Avoid flagging simple primitives unless it's binary Ion.
+		}
+	}
+
+	fmt.Printf("    %sDetected Format: Ion%s (decoded and shown as JSON)\n", packetTypeColor, colorReset)
+
+	for _, v := range values {
+		// Marshal each top-level value to JSON for pretty printing.
+		pretty, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			// This might happen if the Ion value can't be represented as JSON,
+			// in which case we just print a placeholder.
+			fmt.Printf("      <could not convert Ion value to JSON: %v>\n", err)
+			continue
+		}
+		indented := "    " + strings.ReplaceAll(string(pretty), "\n", "\n    ")
+		fmt.Println(strings.TrimRight(indented, " "))
+	}
+
+	return true
+}
+
+func tryUBJSON(data []byte) bool {
+	var v interface{}
+	if err := ubjson.Unmarshal(data, &v); err != nil {
+		return false
+	}
+
+	// Heuristic: If the decoded value is not a map or a slice,
+	// it's probably not the intended format.
+	switch v.(type) {
+	case map[string]interface{}, []interface{}:
+		// This looks like a complex object, proceed.
+	default:
+		// It's a simple primitive (string, int, bool, etc.).
+		// While technically valid UBJSON, it's likely a false positive for our use case.
+		return false
+	}
+
+	fmt.Printf("    %sDetected Format: UBJSON%s (decoded and shown as JSON)\n", packetTypeColor, colorReset)
+	pretty, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		// This should not happen if unmarshal to interface worked
+		fmt.Printf("      Could not convert to JSON: %v\n", err)
+		return true
+	}
+	indented := "    " + strings.ReplaceAll(string(pretty), "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indented, " "))
+	return true
+}
+
+func trySmile(data []byte) bool {
+	// Smile header is :)
+	if len(data) < 3 || data[0] != 0x3A || data[1] != 0x29 || data[2] != 0x0A {
+		return false
+	}
+
+	var v interface{}
+	v, err := smile.DecodeToObject(data)
+	if err != nil {
+		return false
+	}
+
+	// Heuristic: If the decoded value is not a map or a slice,
+	// it's probably not the intended format.
+	switch v.(type) {
+	case map[string]interface{}, []interface{}:
+		// This looks like a complex object, proceed.
+	default:
+		// It's a simple primitive (string, int, bool, etc.).
+		// While technically valid Smile, it's likely a false positive for our use case.
+		return false
+	}
+
+	fmt.Printf("    %sDetected Format: Smile%s (decoded and shown as JSON)\n", packetTypeColor, colorReset)
+	pretty, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		// This should not happen if unmarshal to interface worked
+		fmt.Printf("      Could not convert to JSON: %v\n", err)
+		return true
+	}
+	indented := "    " + strings.ReplaceAll(string(pretty), "\n", "\n    ")
+	fmt.Println(strings.TrimRight(indented, " "))
+	return true
 }
 
 func handlePlaintextOrHex(data []byte) {
