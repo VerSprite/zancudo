@@ -153,6 +153,13 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		},
 	})
 
+	// Set up a CommonJS-like environment by creating `module` and `exports`
+	exports := vm.NewObject()
+	module := vm.NewObject()
+	module.Set("exports", exports)
+	vm.Set("module", module)
+	vm.Set("exports", exports) // Allow using 'exports.handlePacket = ...' directly
+
 	// Execute the script
 	_, err = vm.RunScript(filepath.Base(scriptPath), string(scriptBytes))
 	if err != nil {
@@ -162,25 +169,27 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	engine := &ScriptEngine{vm: vm}
 
 	// Get exported functions from module.exports
-	var exports *goja.Object
-	if module := vm.Get("module"); module != nil {
-		if obj, ok := module.ToObject(vm).Get("exports").(*goja.Object); ok {
-			exports = obj
+	var exportsObj *goja.Object
+	if moduleVal := vm.Get("module"); moduleVal != nil {
+		if obj, ok := moduleVal.ToObject(vm).Get("exports").(*goja.Object); ok {
+			exportsObj = obj
 		}
 	}
-	if exports == nil {
-		exports = vm.GlobalObject()
+
+	// Fallback for scripts that don't use module.exports
+	if exportsObj == nil {
+		exportsObj = vm.GlobalObject()
 	}
 
 	// Get a reference to the handlePacket function
-	if handlePacket := exports.Get("handlePacket"); handlePacket != nil && !goja.IsUndefined(handlePacket) && !goja.IsNull(handlePacket) {
+	if handlePacket := exportsObj.Get("handlePacket"); handlePacket != nil && !goja.IsUndefined(handlePacket) && !goja.IsNull(handlePacket) {
 		if fn, ok := goja.AssertFunction(handlePacket); ok {
 			engine.handlePacket = fn
 		}
 	}
 
 	// Get a reference to the analyzePayload function
-	if analyzePayload := exports.Get("analyzePayload"); analyzePayload != nil && !goja.IsUndefined(analyzePayload) && !goja.IsNull(analyzePayload) {
+	if analyzePayload := exportsObj.Get("analyzePayload"); analyzePayload != nil && !goja.IsUndefined(analyzePayload) && !goja.IsNull(analyzePayload) {
 		if fn, ok := goja.AssertFunction(analyzePayload); ok {
 			engine.analyzePayload = fn
 		}
