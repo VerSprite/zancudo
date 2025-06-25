@@ -74,6 +74,36 @@ const (
 	DISCONNECT  = 14
 )
 
+var propertyNames = map[int]string{
+	0x01: "Payload Format Indicator",
+	0x02: "Message Expiry Interval",
+	0x03: "Content Type",
+	0x08: "Response Topic",
+	0x09: "Correlation Data",
+	0x0B: "Subscription Identifier",
+	0x11: "Session Expiry Interval",
+	0x12: "Assigned Client Identifier",
+	0x13: "Server Keep Alive",
+	0x15: "Authentication Method",
+	0x16: "Authentication Data",
+	0x17: "Request Problem Information",
+	0x18: "Will Delay Interval",
+	0x19: "Request Response Information",
+	0x1A: "Response Information",
+	0x1C: "Server Reference",
+	0x1F: "Reason String",
+	0x21: "Receive Maximum",
+	0x22: "Topic Alias Maximum",
+	0x23: "Topic Alias",
+	0x24: "Maximum QoS",
+	0x25: "Retain Available",
+	0x26: "User Property",
+	0x27: "Maximum Packet Size",
+	0x28: "Wildcard Subscription Available",
+	0x29: "Subscription Identifier Available",
+	0x2A: "Shared Subscription Available",
+}
+
 // ANSI color codes
 var (
 	colorReset         = "\033[0m"
@@ -165,6 +195,20 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 			}
 			log.Println(strings.Join(parts, " "))
 		},
+	})
+
+	// Simplistic implementation of "require" to provide a more CommonJS-like environment
+	vm.Set("require", func(call goja.FunctionCall) goja.Value {
+		filename := call.Argument(0).String()
+		content, err := os.ReadFile(filename)
+		if err != nil {
+			panic(err)
+		}
+		value, err := vm.RunString(string(content))
+		if err != nil {
+			panic(err)
+		}
+		return value
 	})
 
 	// Polyfill TextDecoder and TextEncoder to provide a more browser-like environment
@@ -746,8 +790,8 @@ func (mb *MQTTBuffer) extractCompletePackets() [][]byte {
 		}
 
 		// Decode the remaining length
-		remainingLength, endPos := decodeLength(mb.buffer, offset+1)
-		lengthBytes := endPos - (offset + 1)
+		remainingLength, endPos := decodeVarByteInt(mb.buffer[offset+1:])
+		lengthBytes := endPos
 
 		// Total packet size is: fixed header (1 byte) + length bytes + remaining length
 		totalPacketSize := 1 + lengthBytes + remainingLength
@@ -809,31 +853,30 @@ func getPacketTypeName(packetType byte) string {
 	}
 }
 
-func decodeLength(data []byte, offset int) (int, int) {
-	length := 0
+func decodeVarByteInt(data []byte) (int, int) {
 	multiplier := 1
-	pos := offset
-
+	value := 0
+	bytesRead := 0
 	for {
-		if pos >= len(data) {
-			return 0, pos
+		if bytesRead >= len(data) {
+			return 0, 0 // Error: not enough data
 		}
-
-		digit := data[pos]
-		length += int(digit&0x7F) * multiplier
-		pos++
-
-		if (digit & 0x80) == 0 {
+		encodedByte := data[bytesRead]
+		bytesRead++
+		value += int(encodedByte&0x7F) * multiplier
+		if (encodedByte & 0x80) == 0 {
 			break
 		}
-
-		multiplier *= 128
-		if multiplier > 128*128*128 {
-			return 0, pos
+		if bytesRead >= 4 {
+			return 0, 0 // Error: malformed integer, more than 4 bytes
 		}
+		multiplier *= 128
 	}
+	return value, bytesRead
+}
 
-	return length, pos
+func decodeLength(data []byte) (int, int) {
+	return decodeVarByteInt(data)
 }
 
 func encodeLength(length int) []byte {
@@ -933,7 +976,13 @@ func analyzeMQTTPacket(direction string, data []byte) {
 	}
 
 	flags := firstByte & 0x0F
-	remainingLength, headerEnd := decodeLength(data, 1)
+	remainingLength, headerEnd := decodeLength(data[1:])
+	if headerEnd == 0 && remainingLength > 0 { // Should not happen with valid packets
+		log.Printf("=== Malformed Packet (bad remaining length) ===")
+		return
+	}
+	headerEnd++ // Account for the first byte
+
 	if headerEnd > len(data) && !verbose {
 		return
 	}
@@ -1078,6 +1127,10 @@ func analyzeCONNECT(payload []byte) {
 	log.Printf("    Keep Alive: %d seconds", keepAlive)
 	offset += 2
 
+	if protoLevel >= 5 {
+		offset = analyzeProperties(payload, offset, "Connect")
+	}
+
 	// Client ID
 	clientID, newOffset := decodeString(payload, offset)
 	if newOffset == offset {
@@ -1089,6 +1142,11 @@ func analyzeCONNECT(payload []byte) {
 
 	// Will Topic & Message
 	if willFlag {
+		if protoLevel >= 5 {
+			// Will Properties
+			offset = analyzeProperties(payload, offset, "Will")
+		}
+
 		willTopic, newOffset := decodeString(payload, offset)
 		if newOffset == offset && len(willTopic) == 0 {
 			log.Printf("    [Broken CONNECT packet: could not decode Will Topic]")
@@ -1445,10 +1503,101 @@ func modifyFirstConnectPacket(packets [][]byte, username, password string) (newP
 	return packets, false, nil // No CONNECT packet found, no modification
 }
 
+// analyzeProperties parses and logs MQTT v5 properties.
+// It returns the new offset after parsing all properties.
+func analyzeProperties(payload []byte, offset int, context string) int {
+	propLen, propLenBytes := decodeVarByteInt(payload[offset:])
+	if propLenBytes == 0 && propLen > 0 {
+		log.Printf("    [Broken %s Properties: could not read properties length]", context)
+		return offset
+	}
+	propStart := offset + propLenBytes
+	propEnd := propStart + propLen
+
+	if propEnd > len(payload) {
+		log.Printf("    [Broken %s Properties: length (%d) exceeds packet bounds]", context, propLen)
+		return propStart // Return offset after the length, to avoid parsing garbage but still advance
+	}
+
+	if propLen > 0 {
+		log.Printf("    %s Properties (len %d):", context, propLen)
+	}
+
+	currentOffset := propStart
+	for currentOffset < propEnd {
+		propID, idBytes := decodeVarByteInt(payload[currentOffset:])
+		if idBytes == 0 {
+			log.Printf("        [Broken Properties: could not read property ID at offset %d]", currentOffset)
+			break
+		}
+		currentOffset += idBytes
+
+		propName, ok := propertyNames[propID]
+		if !ok {
+			propName = fmt.Sprintf("Unknown Property (0x%X)", propID)
+		}
+
+		var valStr string
+		var valBytes int
+		switch propID {
+		case 0x01, 0x17, 0x19, 0x24, 0x25, 0x28, 0x29, 0x2A: // Byte
+			if currentOffset+1 > propEnd {
+				break
+			}
+			valStr = fmt.Sprintf("%d", payload[currentOffset])
+			valBytes = 1
+		case 0x13, 0x21, 0x22, 0x23: // Two-Byte Integer
+			if currentOffset+2 > propEnd {
+				break
+			}
+			valStr = fmt.Sprintf("%d", binary.BigEndian.Uint16(payload[currentOffset:]))
+			valBytes = 2
+		case 0x02, 0x11, 0x18, 0x27: // Four-Byte Integer
+			if currentOffset+4 > propEnd {
+				break
+			}
+			valStr = fmt.Sprintf("%d", binary.BigEndian.Uint32(payload[currentOffset:]))
+			valBytes = 4
+		case 0x0B: // Variable Byte Integer
+			val, n := decodeVarByteInt(payload[currentOffset:])
+			valStr = fmt.Sprintf("%d", val)
+			valBytes = n
+		case 0x03, 0x08, 0x12, 0x1A, 0x1C, 0x1F, 0x15: // UTF-8 Encoded String
+			val, newOffset := decodeString(payload, currentOffset)
+			valStr = fmt.Sprintf("\"%s\"", val)
+			valBytes = newOffset - currentOffset
+		case 0x09, 0x16: // Binary Data
+			// Binary data is encoded like a string (length prefixed)
+			val, newOffset := decodeString(payload, currentOffset)
+			valStr = fmt.Sprintf("bytes(%d) %s", len(val), hex.EncodeToString([]byte(val)))
+			valBytes = newOffset - currentOffset
+		case 0x26: // UTF-8 String Pair
+			key, n1 := decodeString(payload, currentOffset)
+			val, n2 := decodeString(payload, n1)
+			valStr = fmt.Sprintf("\"%s\" -> \"%s\"", key, val)
+			valBytes = n2 - currentOffset
+		default:
+			log.Printf("        - %s: [Cannot parse unknown property, skipping remaining properties]", propName)
+			currentOffset = propEnd // Bail out
+			continue
+		}
+
+		if valBytes == 0 || currentOffset+valBytes > propEnd {
+			log.Printf("        [Broken Property %s: value overflows properties section]", propName)
+			break
+		}
+		log.Printf("        - %s: %s", propName, valStr)
+		currentOffset += valBytes
+	}
+
+	return propEnd
+}
+
 // rebuildConnectPacket parses an existing CONNECT packet and creates a new one with new credentials.
 func rebuildConnectPacket(originalPacket []byte, newUsername, newPassword string) ([]byte, error) {
 	// --- Begin Parsing ---
-	_, headerEnd := decodeLength(originalPacket, 1)
+	_, lenBytes := decodeLength(originalPacket[1:])
+	headerEnd := 1 + lenBytes
 	payload := originalPacket[headerEnd:]
 	offset := 0
 
@@ -2426,7 +2575,8 @@ func applyScriptToPacket(packet []byte, direction string) ([]byte, error) {
 	// 1. Parse the packet to create the JS object
 	packetType := (packet[0] >> 4) & 0x0F
 	flags := packet[0] & 0x0F
-	_, headerEnd := decodeLength(packet, 1)
+	_, lenBytes := decodeLength(packet[1:])
+	headerEnd := 1 + lenBytes
 	payload := packet[headerEnd:]
 
 	jsPacket := make(map[string]interface{})
