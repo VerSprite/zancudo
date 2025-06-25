@@ -2,7 +2,19 @@
 
 MQTT interception proxy made in Go. It can handle TLS and password authentication, can autodetect the encoding of message payloads, and can be configured to automatically modify certain payloads.
 
-## MQTT Interception Proxy (`mqtt_mitm_proxy.go`)
+## Building from Source
+
+To build the proxy and associated tools, you'll need Go installed on your system. Run `make` to build binaries for all supported platforms (Windows, macOS, Linux).
+
+```bash
+make all
+```
+
+This will create binaries in the `bin/` directory, organized by platform (e.g., `bin/windows_amd64/`, `bin/darwin_amd64/`).
+
+The following examples assume you are running the binaries from the root of the repository. Remember to replace `<your-platform>` with the directory corresponding to your system (e.g. `linux_amd64`). On Windows, you should also use backslashes (`\`) for paths and add the `.exe` extension to the binary names.
+
+## MQTT Interception Proxy (`mqtt_mitm_proxy`)
 
 ### Usage
 
@@ -22,7 +34,7 @@ The proxy supports the following command-line flags:
 ### Example
 
 ```bash
-go run mqtt_mitm_proxy.go --listen 127.0.0.1:8888 --broker internal.broker.local:8883 --proxy-cert proxy.crt --proxy-key proxy.key --verbose
+./mqtt_mitm_proxy --listen 127.0.0.1:8888 --broker internal.broker.local:8883 --proxy-cert proxy.crt --proxy-key proxy.key --verbose
 ```
 
 ### Payload Analysis
@@ -49,9 +61,9 @@ The proxy automatically analyzes and decodes PUBLISH message payloads to provide
     *   Plaintext (if the payload is mostly printable text)
     *   Binary (displayed as a hex dump if no other format is detected)
 
-## Certificate Generation (`gen_certs.go`)
+## Certificate Generation (`gen_certs`)
 
-This proxy requires server certificates to intercept TLS traffic. The `gen_certs.go` tool helps you generate the necessary `proxy.crt` and `proxy.key` files.
+This proxy requires server certificates to intercept TLS traffic. The `gen_certs` tool helps you generate the necessary `proxy.crt` and `proxy.key` files.
 
 ### Usage
 
@@ -62,9 +74,9 @@ The tool has two main subcommands: `fetch` and `clone`.
 This is the recommended method. It connects to the real MQTT broker, fetches its public certificate, and generates a new, similar certificate for the proxy to use.
 
 ```bash
-go run gen_certs.go fetch <hostname:port>
+./gen_certs fetch test.mosquitto.org:8883
 # Example:
-go run gen_certs.go fetch test.mosquitto.org:8883
+./gen_certs fetch test.mosquitto.org:8883
 ```
 
 This will create `proxy.crt` and `proxy.key` in the current directory.
@@ -74,9 +86,9 @@ This will create `proxy.crt` and `proxy.key` in the current directory.
 If you have a server certificate file locally, you can use it as a template.
 
 ```bash
-go run gen_certs.go clone <path_to_cert.pem>
+./gen_certs clone <path_to_cert.pem>
 # Example:
-go run gen_certs.go clone /path/to/server.crt
+./gen_certs clone /path/to/server.crt
 ```
 
 ### Advanced Options
@@ -96,19 +108,19 @@ By default, generated certificates are self-signed. For clients that require a t
     -   When using `clone`, the new CA will mimic the *issuer* of the local certificate file.
 
     ```bash
-    go run gen_certs.go fetch --gen-ca test.mosquitto.org:8883
+    ./gen_certs fetch --gen-ca test.mosquitto.org:8883
     ```
 
 2.  **Use an Existing CA**: If you already have a CA, you can use it to sign the proxy certificate.
 
     ```bash
-    go run gen_certs.go fetch --ca-cert /path/to/ca.crt --ca-key /path/to/ca.key test.mosquitto.org:8883
+    ./gen_certs fetch --ca-cert /path/to/ca.crt --ca-key /path/to/ca.key test.mosquitto.org:8883
     ```
 
 3.  **Use a CA Certificate as a Template**: If you only have the CA's public certificate (`.crt`) but not its private key, the tool can generate a new, mimicked CA based on it.
 
     ```bash
-    go run gen_certs.go fetch --ca-cert /path/to/ca.crt test.mosquitto.org:8883
+    ./gen_certs fetch --ca-cert /path/to/ca.crt test.mosquitto.org:8883
     ```
 This will generate `ca.crt` and `ca.key` based on the provided template, then use them for signing.
 
@@ -119,7 +131,7 @@ The proxy can be extended with custom logic using JavaScript. You can intercept,
 To load a script, use the `--script` command-line flag:
 
 ```sh
-go run ./cmd/mqtt_mitm_proxy --script ./cmd/mqtt_mitm_proxy/example.js --listen :1883 --broker test.mosquitto.org:1883
+./mqtt_mitm_proxy --script ./example.js --listen :1883 --broker test.mosquitto.org:1883
 ```
 
 The script is a standard JavaScript file that can export two special functions: `handlePacket` and `analyzePayload`. You don't need to export both; the proxy will only call the ones it finds.
