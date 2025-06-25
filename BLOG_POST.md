@@ -94,6 +94,8 @@ module.exports = { analyzePayload };
 
 You load it with the `--script` flag, and suddenly the proxy speaks your target's language.
 
+While the example above uses a simple XOR cipher, real-world scenarios often involve more complex, standard cryptographic algorithms like AES or DES. To make tackling these even easier, MQTT-Proxy's scripting engine comes with a suite of built-in cryptographic helpers. You can perform encryption, decryption, and hashing directly from your scripts without needing to implement the algorithms from scratch. This makes reversing and re-implementing proprietary encryption schemes significantly faster.
+
 #### `handlePacket`: Manipulating Traffic on the Fly
 
 The real power of pentesting comes from manipulation, not just observation. The `handlePacket` function is your gateway to modifying, dropping, or injecting MQTT packets.
