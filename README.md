@@ -227,6 +227,51 @@ function analyzePayload(payload) {
 }
 ```
 
-### `console.log`
+### Available Helpers
 
-You can use `console.log` within your script to print messages to the proxy's console. This is useful for debugging your script.
+The JavaScript environment provides several built-in helper functions and a crypto module to facilitate packet analysis and manipulation.
+
+#### Global Functions
+
+*   `console.log(...args)`: Prints arguments to the proxy's main console. Useful for debugging scripts.
+*   `require(path)`: Loads a JavaScript file from the given path and executes it. This is a simple file loader, not a full Node.js-style module resolver. It's useful for splitting your code into multiple files.
+*   `btoa(string)`: Performs Base64 encoding.
+*   `atob(string)`: Performs Base64 decoding.
+*   `TextEncoder` and `TextDecoder`: Standard browser APIs for converting between strings and `Uint8Array`s (assuming UTF-8 encoding).
+
+#### Crypto Module
+
+A global `crypto` object is available with a suite of cryptographic functions. For all functions, data can be passed as a `string`, `ArrayBuffer`, or `Uint8Array`. Keys should be in PEM format where applicable.
+
+*   `crypto.hash(algorithm, data, [encoding])`: Computes a hash.
+    *   `algorithm`: `'md5'`, `'sha1'`, `'sha256'`, `'sha512'`.
+    *   `encoding` (optional): `'hex'` or `'base64'`. Returns an `ArrayBuffer` if omitted.
+
+*   `crypto.hmac(algorithm, key, data, [encoding])`: Computes a Hash-based Message Authentication Code (HMAC).
+    *   `algorithm`: `'sha1'`, `'sha256'`, `'sha512'`.
+    *   `encoding` (optional): `'hex'` or `'base64'`. Returns an `ArrayBuffer` if omitted.
+
+*   `crypto.encrypt(algorithm, key, iv, plaintext)`: Encrypts data.
+    *   `algorithm`: `'aes-128-gcm'`, `'aes-256-gcm'`.
+    *   Returns an object `{ ciphertext, authTag }` as `ArrayBuffer`s.
+
+*   `crypto.decrypt(algorithm, key, iv, authTag, ciphertext)`: Decrypts data.
+    *   `algorithm`: `'aes-128-gcm'`, `'aes-256-gcm'`.
+    *   Returns the plaintext as an `ArrayBuffer`.
+
+*   `crypto.rsaEncrypt(publicKey, hash, plaintext)`: Encrypts data using an RSA public key (OAEP padding).
+    *   `hash`: The hash algorithm to use for OAEP (`'sha1'`, `'sha256'`, etc.).
+
+*   `crypto.rsaDecrypt(privateKey, hash, ciphertext)`: Decrypts data using an RSA private key.
+
+*   `crypto.rsaSign(privateKey, hash, data)`: Creates an RSA-PSS signature.
+
+*   `crypto.rsaVerify(publicKey, hash, data, signature)`: Verifies an RSA-PSS signature. Returns `true` or `false`.
+
+*   `crypto.ecdsaSign(privateKey, hash, data)`: Creates an ECDSA signature.
+
+*   `crypto.ecdsaVerify(publicKey, hash, data, signature)`: Verifies an ECDSA signature. Returns `true` or `false`.
+
+*   `crypto.ecdh(privateKey, publicKey)`: Performs an Elliptic-Curve Diffie-Hellman key exchange.
+    *   Keys must be on the same curve (`P-256`, `P-384`, or `P-521`).
+    *   Returns the shared secret as an `ArrayBuffer`.
