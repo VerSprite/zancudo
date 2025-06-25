@@ -153,6 +153,50 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		},
 	})
 
+	// Polyfill TextDecoder and TextEncoder to provide a more browser-like environment
+	vm.Set("TextDecoder", func(call goja.ConstructorCall) *goja.Object {
+		// We'll ignore the encoding argument and assume UTF-8, which is the default.
+		call.This.Set("decode", func(v goja.Value) (string, error) {
+			var buffer []byte
+			if ab, ok := v.Export().(goja.ArrayBuffer); ok {
+				buffer = ab.Bytes()
+			} else {
+				// It could be a TypedArray view like Uint8Array
+				if tobj, ok := v.(*goja.Object); ok {
+					if bufVal := tobj.Get("buffer"); bufVal != nil {
+						if ab, ok := bufVal.Export().(goja.ArrayBuffer); ok {
+							byteOffset := tobj.Get("byteOffset").ToInteger()
+							byteLength := tobj.Get("byteLength").ToInteger()
+							srcBuffer := ab.Bytes()
+							if byteOffset > int64(len(srcBuffer)) {
+								// As per spec, throw RangeError
+								panic(vm.NewGoError(fmt.Errorf("byteOffset is out of range")))
+							}
+							end := byteOffset + byteLength
+							if end > int64(len(srcBuffer)) {
+								panic(vm.NewGoError(fmt.Errorf("byteLength is out of range")))
+							}
+							buffer = srcBuffer[byteOffset:end]
+						}
+					}
+				}
+			}
+
+			if buffer == nil {
+				return "", fmt.Errorf("TextDecoder.decode: argument must be an ArrayBuffer or a TypedArray view")
+			}
+			return string(buffer), nil
+		})
+		return nil
+	})
+
+	vm.Set("TextEncoder", func(call goja.ConstructorCall) *goja.Object {
+		call.This.Set("encode", func(s string) goja.Value {
+			return vm.ToValue(vm.NewArrayBuffer([]byte(s)))
+		})
+		return nil
+	})
+
 	// Set up a CommonJS-like environment by creating `module` and `exports`
 	exports := vm.NewObject()
 	module := vm.NewObject()
