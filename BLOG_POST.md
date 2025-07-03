@@ -1,6 +1,6 @@
-<div style="text-align: center;">
+<p align="center">
   <img src="ZANCUDO.png" alt="ZANCUDO LOGO" />
-</div>
+<p align="center">
 
 ### **Introducing ZANCUDO: The Pentester's Burp Suite for MQTT**
 
