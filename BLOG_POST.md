@@ -46,7 +46,7 @@ Supported formats include:
 Running the proxy is simple. You tell it where to listen and where the real broker is. For a TLS-enabled broker, you provide the certificates you just generated.
 
 ```bash
-./mqtt_mitm_proxy \
+./zancudo \
     --listen 127.0.0.1:8883 \
     --broker real.broker.com:8883 \
     --proxy-cert proxy.crt \
