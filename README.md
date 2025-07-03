@@ -1,4 +1,7 @@
-# ZANCUDO
+<p align="center">
+  <img src="ZANCUDO.png" alt="ZANCUDO LOGO" width="250"/>
+<p align="center">
+
 
 MQTT interception proxy made in Go. It can handle TLS and password authentication, can autodetect the encoding of message payloads, and can be configured to automatically modify certain payloads.
 
