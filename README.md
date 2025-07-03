@@ -1,4 +1,4 @@
-# MQTT-Proxy
+# ZANCUDO
 
 MQTT interception proxy made in Go. It can handle TLS and password authentication, can autodetect the encoding of message payloads, and can be configured to automatically modify certain payloads.
 
