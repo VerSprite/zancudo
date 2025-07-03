@@ -1,4 +1,4 @@
-### **Title: Introducing ZANCUDO: The Pentester's Burp Suite for MQTT**
+### **Introducing ZANCUDO: The Pentester's Burp Suite for MQTT**
 
 In the world of web application security, we'd be lost without tools like Burp Suite. The ability to intercept, analyze, and manipulate HTTP traffic is fundamental to our work. But when we step into the rapidly expanding universe of IoT and embedded devices, the landscape changes. Here, MQTT is often the protocol of choice, and the tooling for security testing hasn't quite kept pace.
 
