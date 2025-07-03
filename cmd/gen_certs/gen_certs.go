@@ -46,7 +46,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("Certificate generator for MQTT Proxy")
+	fmt.Println("Certificate generator for Zancudo")
 	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)\n")
 	fmt.Println("Usage: gen_certs <subcommand> [options]")
 	fmt.Println("\nSubcommands:")

@@ -1707,7 +1707,7 @@ func isMostlyPrintable(data []byte) bool {
 }
 
 func printProxyUsage() {
-	fmt.Println("MQTT Interception Proxy")
+	fmt.Println("MQTT Interception Proxy for Zancudo")
 	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)\n")
 	fmt.Println("Usage: zancudo [flags]")
 	fmt.Println("\nFlags:")
