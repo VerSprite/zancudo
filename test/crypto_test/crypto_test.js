@@ -3,7 +3,7 @@
  *
  * This script demonstrates how to use the cryptographic functions provided by the proxy.
  * To use it, run the proxy with the --script flag:
- * go run ./cmd/mqtt_mitm_proxy --script ./cmd/mqtt_mitm_proxy/crypto_example.js
+ * go run ./cmd/zancudo --script ./cmd/zancudo/crypto_example.js
  *
  * Then, publish a message to the topic 'test/crypto' to trigger the tests.
  * mosquitto_pub -h localhost -p 8883 -t "test/crypto" -m "run"

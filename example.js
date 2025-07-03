@@ -4,7 +4,7 @@
  * This script demonstrates how to use the scripting features of the MQTT-Proxy.
  *
  * To use it, run the proxy with the --script flag:
- * go run ./cmd/mqtt_mitm_proxy --script ./cmd/mqtt_mitm_proxy/example.js
+ * zancudo --script example.js
  */
 
 /**

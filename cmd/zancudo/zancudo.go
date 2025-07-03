@@ -1709,7 +1709,7 @@ func isMostlyPrintable(data []byte) bool {
 func printProxyUsage() {
 	fmt.Println("MQTT Interception Proxy")
 	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)\n")
-	fmt.Println("Usage: mqtt_mitm_proxy [flags]")
+	fmt.Println("Usage: zancudo [flags]")
 	fmt.Println("\nFlags:")
 	fmt.Println("  --listen <addr:port>      Address and port for the proxy to listen on (default: :8883)")
 	fmt.Println("  --broker <addr:port>      Address and port of the remote MQTT broker (default: test.mosquitto.org:8883)")

@@ -14,7 +14,7 @@ This will create binaries in the `bin/` directory, organized by platform (e.g., 
 
 The following examples assume you are running the binaries from the root of the repository. Remember to replace `<your-platform>` with the directory corresponding to your system (e.g. `linux_amd64`). On Windows, you should also use backslashes (`\`) for paths and add the `.exe` extension to the binary names.
 
-## MQTT Interception Proxy (`mqtt_mitm_proxy`)
+## MQTT Interception Proxy (`zancudo`)
 
 ### Usage
 
@@ -34,7 +34,7 @@ The proxy supports the following command-line flags:
 ### Example
 
 ```bash
-./mqtt_mitm_proxy --listen 127.0.0.1:8888 --broker internal.broker.local:8883 --proxy-cert proxy.crt --proxy-key proxy.key --verbose
+./zancudo --listen 127.0.0.1:8888 --broker internal.broker.local:8883 --proxy-cert proxy.crt --proxy-key proxy.key --verbose
 ```
 
 ### Payload Analysis
@@ -131,7 +131,7 @@ The proxy can be extended with custom logic using JavaScript. You can intercept,
 To load a script, use the `--script` command-line flag:
 
 ```sh
-./mqtt_mitm_proxy --script ./example.js --listen :1883 --broker test.mosquitto.org:1883
+./zancudo --script ./example.js --listen :1883 --broker test.mosquitto.org:1883
 ```
 
 The script is a standard JavaScript file that can export two special functions: `handlePacket` and `analyzePayload`. You don't need to export both; the proxy will only call the ones it finds.
