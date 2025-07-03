@@ -1,4 +1,6 @@
+<p align="center">
 ![ZANCUDO LOGO](ZANCUDO.png)
+</p>
 
 ### **Introducing ZANCUDO: The Pentester's Burp Suite for MQTT**
 
