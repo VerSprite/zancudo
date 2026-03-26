@@ -2,7 +2,7 @@
  * Certificate generator
  * Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)
  * Released under BSD 3-clause license
-*/
+ */
 
 package main
 

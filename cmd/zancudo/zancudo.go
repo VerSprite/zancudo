@@ -2,7 +2,7 @@
  * MQTT Interception Proxy
  * Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)
  * Released under BSD 3-clause license
-*/
+ */
 
 package main
 
@@ -143,12 +143,12 @@ var (
 	username string
 	password string
 
-	verbose       bool
-	vShorthand    bool // for -v alias
+	verbose    bool
+	vShorthand bool // for -v alias
 
-	jwtVerifyKeys multiStringFlag
-	loadedJWTKeys []interface{}
-	protoPaths    multiStringFlag
+	jwtVerifyKeys      multiStringFlag
+	loadedJWTKeys      []interface{}
+	protoPaths         multiStringFlag
 	messageDescriptors []*desc.MessageDescriptor
 )
 
@@ -342,10 +342,16 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	}
 	parseRsaPublicKeyFromPEM := func(pemBytes []byte) (*rsa.PublicKey, error) {
 		block, _ := pem.Decode(pemBytes)
-		if block == nil { return nil, fmt.Errorf("failed to decode PEM block") }
+		if block == nil {
+			return nil, fmt.Errorf("failed to decode PEM block")
+		}
 		pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil { return nil, fmt.Errorf("failed to parse public key: %w", err) }
-		if rsaKey, ok := pub.(*rsa.PublicKey); ok { return rsaKey, nil }
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse public key: %w", err)
+		}
+		if rsaKey, ok := pub.(*rsa.PublicKey); ok {
+			return rsaKey, nil
+		}
 		return nil, fmt.Errorf("key is not an RSA public key")
 	}
 	parseEcdsaPrivateKeyFromPEM := func(pemBytes []byte) (*ecdsa.PrivateKey, error) {
@@ -366,10 +372,16 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	}
 	parseEcdsaPublicKeyFromPEM := func(pemBytes []byte) (*ecdsa.PublicKey, error) {
 		block, _ := pem.Decode(pemBytes)
-		if block == nil { return nil, fmt.Errorf("failed to decode PEM block") }
+		if block == nil {
+			return nil, fmt.Errorf("failed to decode PEM block")
+		}
 		pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil { return nil, fmt.Errorf("failed to parse public key: %w", err) }
-		if ecdsaKey, ok := pub.(*ecdsa.PublicKey); ok { return ecdsaKey, nil }
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse public key: %w", err)
+		}
+		if ecdsaKey, ok := pub.(*ecdsa.PublicKey); ok {
+			return ecdsaKey, nil
+		}
 		return nil, fmt.Errorf("key is not an ECDSA public key")
 	}
 
@@ -386,10 +398,14 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 
 		var h hash.Hash
 		switch algorithm {
-		case "md5": h = md5.New()
-		case "sha1": h = sha1.New()
-		case "sha256": h = sha256.New()
-		case "sha512": h = sha512.New()
+		case "md5":
+			h = md5.New()
+		case "sha1":
+			h = sha1.New()
+		case "sha256":
+			h = sha256.New()
+		case "sha512":
+			h = sha512.New()
 		default:
 			panic(vm.NewGoError(fmt.Errorf("unsupported hash algorithm: %s", algorithm)))
 		}
@@ -399,8 +415,10 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		if len(call.Arguments) > 2 {
 			enc := strings.ToLower(call.Argument(2).String())
 			switch enc {
-			case "hex": return vm.ToValue(hex.EncodeToString(digest))
-			case "base64": return vm.ToValue(base64.StdEncoding.EncodeToString(digest))
+			case "hex":
+				return vm.ToValue(hex.EncodeToString(digest))
+			case "base64":
+				return vm.ToValue(base64.StdEncoding.EncodeToString(digest))
 			default:
 				panic(vm.NewGoError(fmt.Errorf("unsupported encoding: %s", enc)))
 			}
@@ -425,9 +443,12 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 
 		var h func() hash.Hash
 		switch algorithm {
-		case "sha1": h = sha1.New
-		case "sha256": h = sha256.New
-		case "sha512": h = sha512.New
+		case "sha1":
+			h = sha1.New
+		case "sha256":
+			h = sha256.New
+		case "sha512":
+			h = sha512.New
 		default:
 			panic(vm.NewGoError(fmt.Errorf("unsupported hmac algorithm: %s", algorithm)))
 		}
@@ -439,8 +460,10 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		if len(call.Arguments) > 3 {
 			enc := strings.ToLower(call.Argument(3).String())
 			switch enc {
-			case "hex": return vm.ToValue(hex.EncodeToString(sig))
-			case "base64": return vm.ToValue(base64.StdEncoding.EncodeToString(sig))
+			case "hex":
+				return vm.ToValue(hex.EncodeToString(sig))
+			case "base64":
+				return vm.ToValue(base64.StdEncoding.EncodeToString(sig))
 			default:
 				panic(vm.NewGoError(fmt.Errorf("unsupported encoding: %s", enc)))
 			}
@@ -531,84 +554,132 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 
 	// crypto.rsaEncrypt(publicKey, hash, plaintext)
 	cryptoObj.Set("rsaEncrypt", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 3 { panic(vm.NewGoError(fmt.Errorf("rsaEncrypt requires 3 arguments: publicKey, hash, and plaintext"))) }
+		if len(call.Arguments) < 3 {
+			panic(vm.NewGoError(fmt.Errorf("rsaEncrypt requires 3 arguments: publicKey, hash, and plaintext")))
+		}
 		pubKeyPEM, err := getBytesFromValue(vm, call.Argument(0))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("rsaEncrypt publicKey: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("rsaEncrypt publicKey: %w", err)))
+		}
 		hashName := call.Argument(1).String()
 		plaintext, err := getBytesFromValue(vm, call.Argument(2))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("rsaEncrypt plaintext: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("rsaEncrypt plaintext: %w", err)))
+		}
 
 		pubKey, err := parseRsaPublicKeyFromPEM(pubKeyPEM)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("invalid public key: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("invalid public key: %w", err)))
+		}
 
 		hashFn, _, err := getHasher(hashName)
-		if err != nil { panic(vm.NewGoError(err)) }
+		if err != nil {
+			panic(vm.NewGoError(err))
+		}
 
 		ciphertext, err := rsa.EncryptOAEP(hashFn(), rand.Reader, pubKey, plaintext, nil)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("RSA encryption failed: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("RSA encryption failed: %w", err)))
+		}
 		return vm.ToValue(vm.NewArrayBuffer(ciphertext))
 	})
 
 	// crypto.rsaDecrypt(privateKey, hash, ciphertext)
 	cryptoObj.Set("rsaDecrypt", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 3 { panic(vm.NewGoError(fmt.Errorf("rsaDecrypt requires 3 arguments: privateKey, hash, and ciphertext"))) }
+		if len(call.Arguments) < 3 {
+			panic(vm.NewGoError(fmt.Errorf("rsaDecrypt requires 3 arguments: privateKey, hash, and ciphertext")))
+		}
 		privKeyPEM, err := getBytesFromValue(vm, call.Argument(0))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("rsaDecrypt privateKey: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("rsaDecrypt privateKey: %w", err)))
+		}
 		hashName := call.Argument(1).String()
 		ciphertext, err := getBytesFromValue(vm, call.Argument(2))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("rsaDecrypt ciphertext: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("rsaDecrypt ciphertext: %w", err)))
+		}
 
 		privKey, err := parseRsaPrivateKeyFromPEM(privKeyPEM)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("invalid private key: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("invalid private key: %w", err)))
+		}
 
 		hashFn, _, err := getHasher(hashName)
-		if err != nil { panic(vm.NewGoError(err)) }
+		if err != nil {
+			panic(vm.NewGoError(err))
+		}
 
 		plaintext, err := rsa.DecryptOAEP(hashFn(), rand.Reader, privKey, ciphertext, nil)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("RSA decryption failed: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("RSA decryption failed: %w", err)))
+		}
 		return vm.ToValue(vm.NewArrayBuffer(plaintext))
 	})
 
 	// crypto.rsaSign(privateKey, hash, data)
 	cryptoObj.Set("rsaSign", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 3 { panic(vm.NewGoError(fmt.Errorf("rsaSign requires 3 arguments: privateKey, hash, and data"))) }
+		if len(call.Arguments) < 3 {
+			panic(vm.NewGoError(fmt.Errorf("rsaSign requires 3 arguments: privateKey, hash, and data")))
+		}
 		privKeyPEM, err := getBytesFromValue(vm, call.Argument(0))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("rsaSign privateKey: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("rsaSign privateKey: %w", err)))
+		}
 		hashName := call.Argument(1).String()
 		data, err := getBytesFromValue(vm, call.Argument(2))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("rsaSign data: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("rsaSign data: %w", err)))
+		}
 
 		privKey, err := parseRsaPrivateKeyFromPEM(privKeyPEM)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("invalid private key: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("invalid private key: %w", err)))
+		}
 
 		hashFn, cryptoHash, err := getHasher(hashName)
-		if err != nil { panic(vm.NewGoError(err)) }
+		if err != nil {
+			panic(vm.NewGoError(err))
+		}
 
 		h := hashFn()
 		h.Write(data)
 		hashed := h.Sum(nil)
 
 		sig, err := rsa.SignPSS(rand.Reader, privKey, cryptoHash, hashed, nil)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("RSA PSS signing failed: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("RSA PSS signing failed: %w", err)))
+		}
 		return vm.ToValue(vm.NewArrayBuffer(sig))
 	})
 
 	// crypto.rsaVerify(publicKey, hash, data, signature)
 	cryptoObj.Set("rsaVerify", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 4 { panic(vm.NewGoError(fmt.Errorf("rsaVerify requires 4 arguments: publicKey, hash, data, and signature"))) }
+		if len(call.Arguments) < 4 {
+			panic(vm.NewGoError(fmt.Errorf("rsaVerify requires 4 arguments: publicKey, hash, data, and signature")))
+		}
 		pubKeyPEM, err := getBytesFromValue(vm, call.Argument(0))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("rsaVerify publicKey: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("rsaVerify publicKey: %w", err)))
+		}
 		hashName := call.Argument(1).String()
 		data, err := getBytesFromValue(vm, call.Argument(2))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("rsaVerify data: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("rsaVerify data: %w", err)))
+		}
 		signature, err := getBytesFromValue(vm, call.Argument(3))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("rsaVerify signature: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("rsaVerify signature: %w", err)))
+		}
 
 		pubKey, err := parseRsaPublicKeyFromPEM(pubKeyPEM)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("invalid public key: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("invalid public key: %w", err)))
+		}
 
 		hashFn, cryptoHash, err := getHasher(hashName)
-		if err != nil { panic(vm.NewGoError(err)) }
+		if err != nil {
+			panic(vm.NewGoError(err))
+		}
 
 		h := hashFn()
 		h.Write(data)
@@ -620,44 +691,68 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 
 	// crypto.ecdsaSign(privateKey, hash, data)
 	cryptoObj.Set("ecdsaSign", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 3 { panic(vm.NewGoError(fmt.Errorf("ecdsaSign requires 3 arguments: privateKey, hash, and data"))) }
+		if len(call.Arguments) < 3 {
+			panic(vm.NewGoError(fmt.Errorf("ecdsaSign requires 3 arguments: privateKey, hash, and data")))
+		}
 		privKeyPEM, err := getBytesFromValue(vm, call.Argument(0))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("ecdsaSign privateKey: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("ecdsaSign privateKey: %w", err)))
+		}
 		hashName := call.Argument(1).String()
 		data, err := getBytesFromValue(vm, call.Argument(2))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("ecdsaSign data: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("ecdsaSign data: %w", err)))
+		}
 
 		privKey, err := parseEcdsaPrivateKeyFromPEM(privKeyPEM)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("invalid private key: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("invalid private key: %w", err)))
+		}
 
 		hashFn, _, err := getHasher(hashName)
-		if err != nil { panic(vm.NewGoError(err)) }
+		if err != nil {
+			panic(vm.NewGoError(err))
+		}
 
 		h := hashFn()
 		h.Write(data)
 		hashed := h.Sum(nil)
 
 		sig, err := ecdsa.SignASN1(rand.Reader, privKey, hashed)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("ECDSA signing failed: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("ECDSA signing failed: %w", err)))
+		}
 		return vm.ToValue(vm.NewArrayBuffer(sig))
 	})
 
 	// crypto.ecdsaVerify(publicKey, hash, data, signature)
 	cryptoObj.Set("ecdsaVerify", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 4 { panic(vm.NewGoError(fmt.Errorf("ecdsaVerify requires 4 arguments: publicKey, hash, data, and signature"))) }
+		if len(call.Arguments) < 4 {
+			panic(vm.NewGoError(fmt.Errorf("ecdsaVerify requires 4 arguments: publicKey, hash, data, and signature")))
+		}
 		pubKeyPEM, err := getBytesFromValue(vm, call.Argument(0))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("ecdsaVerify publicKey: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("ecdsaVerify publicKey: %w", err)))
+		}
 		hashName := call.Argument(1).String()
 		data, err := getBytesFromValue(vm, call.Argument(2))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("ecdsaVerify data: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("ecdsaVerify data: %w", err)))
+		}
 		signature, err := getBytesFromValue(vm, call.Argument(3))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("ecdsaVerify signature: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("ecdsaVerify signature: %w", err)))
+		}
 
 		pubKey, err := parseEcdsaPublicKeyFromPEM(pubKeyPEM)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("invalid public key: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("invalid public key: %w", err)))
+		}
 
 		hashFn, _, err := getHasher(hashName)
-		if err != nil { panic(vm.NewGoError(err)) }
+		if err != nil {
+			panic(vm.NewGoError(err))
+		}
 
 		h := hashFn()
 		h.Write(data)
@@ -668,17 +763,27 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 
 	// crypto.ecdh(privateKey, publicKey)
 	cryptoObj.Set("ecdh", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 2 { panic(vm.NewGoError(fmt.Errorf("ecdh requires 2 arguments: privateKey and publicKey"))) }
+		if len(call.Arguments) < 2 {
+			panic(vm.NewGoError(fmt.Errorf("ecdh requires 2 arguments: privateKey and publicKey")))
+		}
 		privKeyPEM, err := getBytesFromValue(vm, call.Argument(0))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("ecdh privateKey: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("ecdh privateKey: %w", err)))
+		}
 		pubKeyPEM, err := getBytesFromValue(vm, call.Argument(1))
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("ecdh publicKey: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("ecdh publicKey: %w", err)))
+		}
 
 		privKey, err := parseEcdsaPrivateKeyFromPEM(privKeyPEM)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("invalid private key: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("invalid private key: %w", err)))
+		}
 
 		pubKey, err := parseEcdsaPublicKeyFromPEM(pubKeyPEM)
-		if err != nil { panic(vm.NewGoError(fmt.Errorf("invalid public key: %w", err))) }
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("invalid public key: %w", err)))
+		}
 
 		if privKey.Curve != pubKey.Curve {
 			panic(vm.NewGoError(fmt.Errorf("keys are not on the same curve")))
@@ -849,7 +954,7 @@ func getPacketTypeName(packetType byte) string {
 	case DISCONNECT:
 		return "DISCONNECT"
 	default:
-		return fmt.Sprintf("UNKNOWN(%d)", packetType)	// should not happen
+		return fmt.Sprintf("UNKNOWN(%d)", packetType) // should not happen
 	}
 }
 
@@ -1102,7 +1207,7 @@ func analyzeCONNECT(payload []byte) {
 	}
 	flags := payload[offset]
 	log.Printf("    Connect Flags: 0x%02X", flags)
-	cleanSession := (flags&0x02) != 0
+	cleanSession := (flags & 0x02) != 0
 	willFlag := (flags & 0x04) != 0
 	willQoS := (flags >> 3) & 0x03
 	willRetain := (flags & 0x20) != 0
@@ -1753,22 +1858,22 @@ func main() {
 		colorReset = ""
 		clientToServerColor = ""
 		serverToClientColor = ""
-		packetTypeColor     = ""
-		topicColor          = ""
-		payloadColor        = ""
+		packetTypeColor = ""
+		topicColor = ""
+		payloadColor = ""
 		// Also reset color values to avoid stray resets or manually added colors
-		colorReset         = ""
-		colorReset         = ""
-		colorRed           = ""
-		colorGreen         = ""
-		colorYellow        = ""
-		colorBlue          = ""
-		colorPurple        = ""
-		colorCyan          = ""
-		colorWhite         = ""
-		colorBold          = ""
+		colorReset = ""
+		colorReset = ""
+		colorRed = ""
+		colorGreen = ""
+		colorYellow = ""
+		colorBlue = ""
+		colorPurple = ""
+		colorCyan = ""
+		colorWhite = ""
+		colorBold = ""
 		colorBrightMagenta = ""
-		colorBrightWhite   = ""
+		colorBrightWhite = ""
 	}
 
 	if scriptPath != "" {
