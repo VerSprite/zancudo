@@ -53,7 +53,7 @@ import (
 	"github.com/amazon-ion/ion-go/ion"
 	"github.com/dop251/goja"
 	"github.com/jmank88/ubjson"
-	"github.com/zencoder/go-smile/smile"
+	"github.com/brightcove/playback_go-smile/smile"
 )
 
 // MQTT packet types

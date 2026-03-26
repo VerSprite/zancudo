@@ -4,13 +4,13 @@ go 1.26.1
 
 require (
 	github.com/amazon-ion/ion-go v1.5.0
-	github.com/dop251/goja v0.0.0-20250531102226-cb187b08699c
+	github.com/brightcove/playback_go-smile v0.0.0-20260128153759-57a2bb174369
+	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/fxamacker/cbor/v2 v2.9.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/jhump/protoreflect v1.18.0
 	github.com/jmank88/ubjson v1.3.1
 	github.com/vmihailenco/msgpack/v5 v5.4.1
-	github.com/zencoder/go-smile v0.0.0-20220221105746-06ef4fe5fa0a
 	go.mongodb.org/mongo-driver v1.17.9
 	gopkg.in/yaml.v3 v3.0.1
 )
