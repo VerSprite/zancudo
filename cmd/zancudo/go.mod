@@ -11,7 +11,7 @@ require (
 	github.com/jmank88/ubjson v1.3.1
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	github.com/zencoder/go-smile v0.0.0-20220221105746-06ef4fe5fa0a
-	go.mongodb.org/mongo-driver v1.17.4
+	go.mongodb.org/mongo-driver v1.17.9
 	gopkg.in/yaml.v3 v3.0.1
 )
 
