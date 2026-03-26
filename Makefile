@@ -38,7 +38,7 @@ MACOS_AMD64_BINS := $(addprefix $(MACOS_AMD64_DIR)/, $(BINS))
 MACOS_ARM64_BINS := $(addprefix $(MACOS_ARM64_DIR)/, $(BINS))
 
 # Additional files to include in releases
-RELEASE_FILES := README.md ZANCUDO.png LICENSE
+RELEASE_FILES := README.md ZANCUDO.png LICENSE $(VERSION_FILE)
 
 .DEFAULT_GOAL := help
 

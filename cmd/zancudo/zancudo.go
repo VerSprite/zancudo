@@ -51,9 +51,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/amazon-ion/ion-go/ion"
+	"github.com/brightcove/playback_go-smile/smile"
 	"github.com/dop251/goja"
 	"github.com/jmank88/ubjson"
-	"github.com/brightcove/playback_go-smile/smile"
 )
 
 // MQTT packet types
@@ -146,9 +146,9 @@ var (
 	username string
 	password string
 
-	verbose       bool
-	vShorthand    bool // for -v alias
-	showVersion   bool
+	verbose     bool
+	vShorthand  bool // for -v alias
+	showVersion bool
 
 	jwtVerifyKeys      multiStringFlag
 	loadedJWTKeys      []interface{}
