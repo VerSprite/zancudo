@@ -1,5 +1,6 @@
 # https://golangci-lint.run/usage/configuration/
 # golangci-lint searches upward from each module directory for this file.
+# Requires golangci-lint v2+ (CI: golangci-lint-action@v9 with version: latest).
 version: "2"
 
 run:

@@ -24,9 +24,9 @@ jobs:
         working-directory: ${{ matrix.module }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache: true
@@ -45,8 +45,9 @@ jobs:
           fi
 
       - name: golangci-lint (incl. gosec)
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
+          version: latest
           working-directory: ${{ matrix.module }}
           # Adds gosec on top of golangci-lint defaults (staticcheck, govet, etc.).
           args: --enable=gosec
