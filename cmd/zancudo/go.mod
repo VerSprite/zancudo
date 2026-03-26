@@ -5,7 +5,7 @@ go 1.24.4
 require (
 	github.com/amazon-ion/ion-go v1.5.0
 	github.com/dop251/goja v0.0.0-20250531102226-cb187b08699c
-	github.com/fxamacker/cbor/v2 v2.8.0
+	github.com/fxamacker/cbor/v2 v2.9.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/jhump/protoreflect v1.18.0
 	github.com/jmank88/ubjson v1.3.1
