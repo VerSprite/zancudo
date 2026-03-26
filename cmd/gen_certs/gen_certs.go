@@ -134,7 +134,7 @@ func handleClone() {
 	certPath := cloneCmd.Arg(0)
 
 	log.Printf("Reading certificate from %s...", certPath)
-	certPEM, err := os.ReadFile(certPath) //#nosec G304 -- certPath is the user-supplied PEM path from the clone subcommand.
+	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
 		log.Fatalf("Failed to read certificate file: %v", err)
 	}
@@ -302,7 +302,7 @@ func generateSignedCertificate(template *x509.Certificate, proxyHostname string,
 
 func saveCertAndKey(cert *x509.Certificate, key *rsa.PrivateKey, certPath, keyPath string) error {
 	// Save certificate
-	certOut, err := os.Create(certPath) //#nosec G304 -- path from explicit --out-cert CLI flag.
+	certOut, err := os.Create(certPath)
 	if err != nil {
 		return fmt.Errorf("failed to open %s for writing: %w", certPath, err)
 	}
@@ -314,7 +314,7 @@ func saveCertAndKey(cert *x509.Certificate, key *rsa.PrivateKey, certPath, keyPa
 	}
 
 	// Save private key
-	keyOut, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //#nosec G304 -- path from explicit --out-key CLI flag.
+	keyOut, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open %s for writing: %w", keyPath, err)
 	}

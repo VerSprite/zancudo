@@ -32,7 +32,94 @@ MACOS_ARM64_BINS := $(addprefix $(MACOS_ARM64_DIR)/, $(BINS))
 # Additional files to include in releases
 RELEASE_FILES := README.md ZANCUDO.png LICENSE
 
-.PHONY: all clean linux windows macos zips linux-zip windows-zip macos-zip
+.DEFAULT_GOAL := help
+
+.PHONY: help all clean linux windows macos zips linux-zip windows-zip macos-zip \
+	ci-tools ci-check ci-fix _ci_binaries
+
+# ANSI colors: used only by the `help` target (bold cyan title, yellow sections, green commands, dim hints).
+help:
+	@printf '%b\n' '\033[1;36mZancudo Makefile\033[0m' '' \
+		'\033[2mRunning make with no target shows this help (default).\033[0m' '' \
+		'\033[1;33mRelease builds\033[0m \033[2m(binaries under bin/, zips under dist/):\033[0m' \
+		'  \033[1;32mmake all\033[0m          Same as zips: all platform zips + binaries' \
+		'  \033[1;32mmake zips\033[0m         linux-zip, windows-zip, macos-zip' \
+		'  \033[1;32mmake linux\033[0m        Linux amd64 binaries only' \
+		'  \033[1;32mmake windows\033[0m      Windows amd64 binaries only' \
+		'  \033[1;32mmake macos\033[0m        Mac OS amd64 + arm64 binaries only' \
+		'  \033[1;32mmake linux-zip\033[0m    Linux zip only (needs linux + README assets)' \
+		'  \033[1;32mmake windows-zip\033[0m  Windows zip only' \
+		'  \033[1;32mmake macos-zip\033[0m    Mac OS zips only' '' \
+		'\033[1;33mCode quality\033[0m \033[2m(mirrors .github/workflows/ci.yml; needs Go per cmd/*/go.mod):\033[0m' \
+		'  \033[1;32mmake ci-tools\033[0m     Install goimports, golangci-lint, govulncheck to GOBIN/GOPATH/bin' \
+		'  \033[1;32mmake ci-check\033[0m     goimports -l, golangci-lint --enable=gosec, govulncheck per module' \
+		'  \033[1;32mmake ci-fix\033[0m       goimports -w, golangci-lint --fix, then govulncheck (vulns: report only)' '' \
+		'\033[1;33mOther\033[0m' \
+		'  \033[1;32mmake clean\033[0m        Remove bin/, dist/, and generated cert files in repo root' ''
+
+# --- CI parity (same checks as .github/workflows/ci.yml) ---
+GO_MODULES := $(addprefix cmd/,$(BINS))
+GOPATH := $(shell go env GOPATH)
+GOBIN := $(shell go env GOBIN)
+CI_BIN := $(if $(strip $(GOBIN)),$(GOBIN),$(GOPATH)/bin)
+GOIMPORTS := $(CI_BIN)/goimports
+GOLANGCI_LINT := $(CI_BIN)/golangci-lint
+GOVULNCHECK := $(CI_BIN)/govulncheck
+GOIMPORTS_LOCAL := github.com/VerSprite
+# golangci-lint must be built with a toolchain >= the `go` line in cmd/zancudo/go.mod.
+CI_GO_TOOLCHAIN := go$(shell awk '/^go / { print $$2; exit }' cmd/zancudo/go.mod)
+
+_ci_binaries:
+	@test -x '$(GOIMPORTS)' && test -x '$(GOLANGCI_LINT)' && test -x '$(GOVULNCHECK)' || \
+		(echo 'Missing tools; install with: make ci-tools' >&2; exit 1)
+
+ci-tools:
+	cd cmd/zancudo && GOTOOLCHAIN=$(CI_GO_TOOLCHAIN) go install golang.org/x/tools/cmd/goimports@latest
+	cd cmd/zancudo && GOTOOLCHAIN=$(CI_GO_TOOLCHAIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	cd cmd/zancudo && GOTOOLCHAIN=$(CI_GO_TOOLCHAIN) go install golang.org/x/vuln/cmd/govulncheck@latest
+
+# Verify: goimports, golangci-lint (incl. gosec), govulncheck per module under cmd/*
+ci-check: _ci_binaries
+	@set -e; \
+	for m in $(GO_MODULES); do \
+		echo "== goimports $$m =="; \
+		out="$$( cd $$m && '$(GOIMPORTS)' -local $(GOIMPORTS_LOCAL) -l . )"; \
+		if [ -n "$$out" ]; then \
+			echo 'The following files need goimports (or gofmt):'; \
+			echo "$$out"; \
+			exit 1; \
+		fi; \
+	done
+	@set -e; \
+	for m in $(GO_MODULES); do \
+		echo "== golangci-lint $$m =="; \
+		( cd $$m && '$(GOLANGCI_LINT)' run --enable=gosec ); \
+	done
+	@set -e; \
+	for m in $(GO_MODULES); do \
+		echo "== govulncheck $$m =="; \
+		( cd $$m && '$(GOVULNCHECK)' ./... ); \
+	done
+	@echo 'ci-check: OK'
+
+# Auto-fix: goimports -w and golangci-lint --fix; then govulncheck (check only, no auto-fix)
+ci-fix: _ci_binaries
+	@set -e; \
+	for m in $(GO_MODULES); do \
+		echo "== goimports -w $$m =="; \
+		( cd $$m && '$(GOIMPORTS)' -local $(GOIMPORTS_LOCAL) -w . ); \
+	done
+	@set -e; \
+	for m in $(GO_MODULES); do \
+		echo "== golangci-lint --fix $$m =="; \
+		( cd $$m && '$(GOLANGCI_LINT)' run --enable=gosec --fix ); \
+	done
+	@set -e; \
+	for m in $(GO_MODULES); do \
+		echo "== govulncheck $$m =="; \
+		( cd $$m && '$(GOVULNCHECK)' ./... ); \
+	done
+	@echo 'ci-fix: OK'
 
 # Build all targets and create zip files
 all: zips

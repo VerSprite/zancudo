@@ -43,7 +43,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/jhump/protoreflect/desc"             //nolint:staticcheck // SA1019: v1 protobuf API pending migration to google.golang.org/protobuf.
+	"github.com/jhump/protoreflect/desc"            //nolint:staticcheck // SA1019: v1 protobuf API pending migration to google.golang.org/protobuf.
 	"github.com/jhump/protoreflect/desc/protoparse" //nolint:staticcheck // SA1019: protoparse wrapper; migration to protocompile is non-trivial.
 	"github.com/jhump/protoreflect/dynamic"         //nolint:staticcheck // SA1019: dynamic messages for v1 descriptors.
 	"github.com/vmihailenco/msgpack/v5"
@@ -110,11 +110,11 @@ var (
 	colorRed           = "\033[31m"
 	colorGreen         = "\033[32m"
 	colorYellow        = "\033[33m"
-	colorBlue          = "\033[34m"   //nolint:unused // reserved for future CLI styling
-	colorPurple        = "\033[35m"   //nolint:unused // reserved for future CLI styling
+	colorBlue          = "\033[34m" //nolint:unused // reserved for future CLI styling
+	colorPurple        = "\033[35m" //nolint:unused // reserved for future CLI styling
 	colorCyan          = "\033[36m"
-	colorWhite         = "\033[37m"   //nolint:unused // reserved for future CLI styling
-	colorBold          = "\033[1m"    //nolint:unused // reserved for future CLI styling
+	colorWhite         = "\033[37m" //nolint:unused // reserved for future CLI styling
+	colorBold          = "\033[1m"  //nolint:unused // reserved for future CLI styling
 	colorBrightMagenta = "\033[95m"
 	colorBrightWhite   = "\x1b[97m"
 )
@@ -191,7 +191,7 @@ func mustObjectSet(obj *goja.Object, name string, val interface{}) {
 }
 
 func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
-	scriptBytes, err := os.ReadFile(scriptPath) //#nosec G304 -- script path from --script CLI flag.
+	scriptBytes, err := os.ReadFile(scriptPath)
 	if err != nil {
 		return nil, fmt.Errorf("could not read script file: %w", err)
 	}
@@ -212,7 +212,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	// Simplistic implementation of "require" to provide a more CommonJS-like environment
 	mustRuntimeSet(vm, "require", func(call goja.FunctionCall) goja.Value {
 		filename := call.Argument(0).String()
-		content, err := os.ReadFile(filename) //#nosec G304 -- path from JS require(); script-controlled.
+		content, err := os.ReadFile(filename)
 		if err != nil {
 			panic(err)
 		}
@@ -398,7 +398,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	}
 
 	// crypto.hash(algorithm, data, [encoding])
-	mustObjectSet(cryptoObj,"hash", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "hash", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(vm.NewGoError(fmt.Errorf("hash requires at least 2 arguments: algorithm and data")))
 		}
@@ -439,7 +439,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.hmac(algorithm, key, data, [encoding])
-	mustObjectSet(cryptoObj,"hmac", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "hmac", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("hmac requires at least 3 arguments: algorithm, key, and data")))
 		}
@@ -484,7 +484,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.encrypt(algorithm, key, iv, plaintext)
-	mustObjectSet(cryptoObj,"encrypt", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "encrypt", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 4 {
 			panic(vm.NewGoError(fmt.Errorf("encrypt requires 4 arguments: algorithm, key, iv, and plaintext")))
 		}
@@ -524,7 +524,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.decrypt(algorithm, key, iv, authTag, ciphertext)
-	mustObjectSet(cryptoObj,"decrypt", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "decrypt", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 5 {
 			panic(vm.NewGoError(fmt.Errorf("decrypt requires 5 arguments: algorithm, key, iv, authTag, and ciphertext")))
 		}
@@ -565,7 +565,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	// --- Public Key Crypto ---
 
 	// crypto.rsaEncrypt(publicKey, hash, plaintext)
-	mustObjectSet(cryptoObj,"rsaEncrypt", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "rsaEncrypt", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("rsaEncrypt requires 3 arguments: publicKey, hash, and plaintext")))
 		}
@@ -597,7 +597,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.rsaDecrypt(privateKey, hash, ciphertext)
-	mustObjectSet(cryptoObj,"rsaDecrypt", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "rsaDecrypt", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("rsaDecrypt requires 3 arguments: privateKey, hash, and ciphertext")))
 		}
@@ -629,7 +629,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.rsaSign(privateKey, hash, data)
-	mustObjectSet(cryptoObj,"rsaSign", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "rsaSign", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("rsaSign requires 3 arguments: privateKey, hash, and data")))
 		}
@@ -665,7 +665,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.rsaVerify(publicKey, hash, data, signature)
-	mustObjectSet(cryptoObj,"rsaVerify", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "rsaVerify", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 4 {
 			panic(vm.NewGoError(fmt.Errorf("rsaVerify requires 4 arguments: publicKey, hash, data, and signature")))
 		}
@@ -702,7 +702,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.ecdsaSign(privateKey, hash, data)
-	mustObjectSet(cryptoObj,"ecdsaSign", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "ecdsaSign", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("ecdsaSign requires 3 arguments: privateKey, hash, and data")))
 		}
@@ -738,7 +738,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.ecdsaVerify(publicKey, hash, data, signature)
-	mustObjectSet(cryptoObj,"ecdsaVerify", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "ecdsaVerify", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 4 {
 			panic(vm.NewGoError(fmt.Errorf("ecdsaVerify requires 4 arguments: publicKey, hash, data, and signature")))
 		}
@@ -774,7 +774,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.ecdh(privateKey, publicKey)
-	mustObjectSet(cryptoObj,"ecdh", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj, "ecdh", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(vm.NewGoError(fmt.Errorf("ecdh requires 2 arguments: privateKey and publicKey")))
 		}
@@ -1431,7 +1431,7 @@ func analyzeSimpleAck(name string, payload []byte) {
 }
 
 func handleConnection(clientConn net.Conn, username, password string) {
-	defer clientConn.Close() //nolint:errcheck // ignore Close errors in defer (common cleanup pattern)
+	defer clientConn.Close()
 	log.Printf("Accepted connection from %s", clientConn.RemoteAddr())
 
 	// 1. Setup Client -> Proxy connection (clientSideConn)
@@ -1483,7 +1483,7 @@ func handleConnection(clientConn net.Conn, username, password string) {
 		serverSideConn = tcpConn
 		log.Printf("Connected to real broker at %s using plaintext TCP.", brokerAddr)
 	}
-	defer serverSideConn.Close() //nolint:errcheck // ignore Close errors in defer (common cleanup pattern)
+	defer serverSideConn.Close()
 
 	// Create buffers for handling fragmented MQTT packets
 	clientToServerBuffer := &MQTTBuffer{}
@@ -1772,7 +1772,7 @@ func rebuildConnectPacket(originalPacket []byte, newUsername, newPassword string
 		}
 		willMessage := payload[offset : offset+msgLen]
 		newPayload.Write(encodeString(string(willMessage))) // Will Message is a binary payload, encodeString handles length
-		offset += msgLen //nolint:ineffassign // advance offset for clarity if CONNECT payload layout changes
+		offset += msgLen                                    //nolint:ineffassign // advance offset for clarity if CONNECT payload layout changes
 	}
 
 	// --- New Credentials ---
@@ -1899,7 +1899,7 @@ func main() {
 	if len(jwtVerifyKeys) > 0 {
 		log.Println("Loading JWT verification keys...")
 		for _, keyPath := range jwtVerifyKeys {
-			pem, err := os.ReadFile(keyPath) //#nosec G304 -- path from repeated --jwt-key CLI flag.
+			pem, err := os.ReadFile(keyPath)
 			if err != nil {
 				log.Printf("  [!] Failed to read key file %s: %v", keyPath, err)
 				continue
@@ -2493,7 +2493,7 @@ func tryProtobuf(data []byte) bool {
 				p = nil
 				break
 			}
-			if n > len(p) || uint64(len(p)-n) < l {
+			if n > len(p) || uint64(len(p)-n) < l { //#nosec G115 - RHS only runs when n <= len(p); len(p)-n is non-negative.
 				p = nil
 				break
 			}

@@ -5,3 +5,24 @@ version: "2"
 
 run:
   timeout: 5m
+
+linters:
+  settings:
+    errcheck:
+      # Ignore Close() errors everywhere (cleanup / teardown; duplicates gosec G104 noise).
+      exclude-functions:
+        - io.Closer.Close
+        - (io.Closer).Close
+        - (io.ReadWriteCloser).Close
+        - (net.Conn).Close
+        - (*crypto/tls.Conn).Close
+        - (*net.TCPConn).Close
+        - (*net.UDPConn).Close
+        - (*net.IPConn).Close
+        - (*net.UnixConn).Close
+    gosec:
+      excludes:
+        # Paths come from CLI flags / args, not untrusted HTTP input (CLI tooling, not a webapp).
+        - G304
+        # Unchecked errors (overlaps errcheck); we exclude Close via errcheck and silence gosec globally for this rule.
+        - G104
