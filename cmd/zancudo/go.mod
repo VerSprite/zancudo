@@ -1,6 +1,6 @@
 module github.com/VerSprite/MQTT-Proxy
 
-go 1.24.4
+go 1.26.1
 
 require (
 	github.com/amazon-ion/ion-go v1.5.0
