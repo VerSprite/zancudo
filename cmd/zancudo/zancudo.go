@@ -15,10 +15,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/hmac"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // G501: intentionally exposed to JS crypto.hash for legacy/interop.
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: intentionally exposed to JS crypto.hash / HMAC.
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/tls"
@@ -43,9 +43,9 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/jhump/protoreflect/desc"
-	"github.com/jhump/protoreflect/desc/protoparse"
-	"github.com/jhump/protoreflect/dynamic"
+	"github.com/jhump/protoreflect/desc"             //nolint:staticcheck // SA1019: v1 protobuf API pending migration to google.golang.org/protobuf.
+	"github.com/jhump/protoreflect/desc/protoparse" //nolint:staticcheck // SA1019: protoparse wrapper; migration to protocompile is non-trivial.
+	"github.com/jhump/protoreflect/dynamic"         //nolint:staticcheck // SA1019: dynamic messages for v1 descriptors.
 	"github.com/vmihailenco/msgpack/v5"
 	"go.mongodb.org/mongo-driver/bson"
 	"gopkg.in/yaml.v3"
@@ -110,11 +110,11 @@ var (
 	colorRed           = "\033[31m"
 	colorGreen         = "\033[32m"
 	colorYellow        = "\033[33m"
-	colorBlue          = "\033[34m"
-	colorPurple        = "\033[35m"
+	colorBlue          = "\033[34m"   //nolint:unused // reserved for future CLI styling
+	colorPurple        = "\033[35m"   //nolint:unused // reserved for future CLI styling
 	colorCyan          = "\033[36m"
-	colorWhite         = "\033[37m"
-	colorBold          = "\033[1m"
+	colorWhite         = "\033[37m"   //nolint:unused // reserved for future CLI styling
+	colorBold          = "\033[1m"    //nolint:unused // reserved for future CLI styling
 	colorBrightMagenta = "\033[95m"
 	colorBrightWhite   = "\x1b[97m"
 )
@@ -178,8 +178,20 @@ type ScriptEngine struct {
 	analyzePayload goja.Callable
 }
 
+func mustRuntimeSet(vm *goja.Runtime, name string, val interface{}) {
+	if err := vm.Set(name, val); err != nil {
+		panic(fmt.Errorf("goja runtime set %q: %w", name, err))
+	}
+}
+
+func mustObjectSet(obj *goja.Object, name string, val interface{}) {
+	if err := obj.Set(name, val); err != nil {
+		panic(fmt.Errorf("goja object set %q: %w", name, err))
+	}
+}
+
 func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
-	scriptBytes, err := os.ReadFile(scriptPath)
+	scriptBytes, err := os.ReadFile(scriptPath) //#nosec G304 -- script path from --script CLI flag.
 	if err != nil {
 		return nil, fmt.Errorf("could not read script file: %w", err)
 	}
@@ -187,7 +199,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	vm := goja.New()
 
 	// Expose console.log to the script
-	vm.Set("console", map[string]interface{}{
+	mustRuntimeSet(vm, "console", map[string]interface{}{
 		"log": func(args ...interface{}) {
 			var parts []string
 			for _, arg := range args {
@@ -198,9 +210,9 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// Simplistic implementation of "require" to provide a more CommonJS-like environment
-	vm.Set("require", func(call goja.FunctionCall) goja.Value {
+	mustRuntimeSet(vm, "require", func(call goja.FunctionCall) goja.Value {
 		filename := call.Argument(0).String()
-		content, err := os.ReadFile(filename)
+		content, err := os.ReadFile(filename) //#nosec G304 -- path from JS require(); script-controlled.
 		if err != nil {
 			panic(err)
 		}
@@ -212,9 +224,9 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// Polyfill TextDecoder and TextEncoder to provide a more browser-like environment
-	vm.Set("TextDecoder", func(call goja.ConstructorCall) *goja.Object {
+	mustRuntimeSet(vm, "TextDecoder", func(call goja.ConstructorCall) *goja.Object {
 		// We'll ignore the encoding argument and assume UTF-8, which is the default.
-		call.This.Set("decode", func(v goja.Value) (string, error) {
+		mustObjectSet(call.This, "decode", func(v goja.Value) (string, error) {
 			var buffer []byte
 			if ab, ok := v.Export().(goja.ArrayBuffer); ok {
 				buffer = ab.Bytes()
@@ -248,15 +260,15 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		return nil
 	})
 
-	vm.Set("TextEncoder", func(call goja.ConstructorCall) *goja.Object {
-		call.This.Set("encode", func(s string) goja.Value {
+	mustRuntimeSet(vm, "TextEncoder", func(call goja.ConstructorCall) *goja.Object {
+		mustObjectSet(call.This, "encode", func(s string) goja.Value {
 			return vm.ToValue(vm.NewArrayBuffer([]byte(s)))
 		})
 		return nil
 	})
 
 	// Polyfill btoa and atob for Base64 encoding/decoding
-	vm.Set("btoa", func(s string) (string, error) {
+	mustRuntimeSet(vm, "btoa", func(s string) (string, error) {
 		for _, r := range s {
 			if r > 0xff {
 				return "", fmt.Errorf("InvalidCharacterError: String contains characters outside of the Latin1 range")
@@ -265,7 +277,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		return base64.StdEncoding.EncodeToString([]byte(s)), nil
 	})
 
-	vm.Set("atob", func(s string) (string, error) {
+	mustRuntimeSet(vm, "atob", func(s string) (string, error) {
 		decoded, err := base64.StdEncoding.DecodeString(s)
 		if err != nil {
 			return "", fmt.Errorf("InvalidCharacterError: The string to be decoded is not correctly encoded")
@@ -311,9 +323,9 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	getHasher := func(name string) (func() hash.Hash, crypto.Hash, error) {
 		switch strings.ToLower(name) {
 		case "md5":
-			return md5.New, crypto.MD5, nil
+			return md5.New, crypto.MD5, nil //#nosec G401 - factory for JS crypto bridge.
 		case "sha1":
-			return sha1.New, crypto.SHA1, nil
+			return sha1.New, crypto.SHA1, nil //#nosec G401 - factory for JS crypto bridge.
 		case "sha256":
 			return sha256.New, crypto.SHA256, nil
 		case "sha512":
@@ -386,7 +398,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	}
 
 	// crypto.hash(algorithm, data, [encoding])
-	cryptoObj.Set("hash", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"hash", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(vm.NewGoError(fmt.Errorf("hash requires at least 2 arguments: algorithm and data")))
 		}
@@ -399,9 +411,9 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		var h hash.Hash
 		switch algorithm {
 		case "md5":
-			h = md5.New()
+			h = md5.New() //#nosec G401 - exposed to JS crypto.hash for legacy algorithms.
 		case "sha1":
-			h = sha1.New()
+			h = sha1.New() //#nosec G401 - exposed to JS crypto.hash for legacy algorithms.
 		case "sha256":
 			h = sha256.New()
 		case "sha512":
@@ -427,7 +439,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.hmac(algorithm, key, data, [encoding])
-	cryptoObj.Set("hmac", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"hmac", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("hmac requires at least 3 arguments: algorithm, key, and data")))
 		}
@@ -444,7 +456,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		var h func() hash.Hash
 		switch algorithm {
 		case "sha1":
-			h = sha1.New
+			h = sha1.New //#nosec G401 - exposed to JS crypto.hmac.
 		case "sha256":
 			h = sha256.New
 		case "sha512":
@@ -472,7 +484,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.encrypt(algorithm, key, iv, plaintext)
-	cryptoObj.Set("encrypt", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"encrypt", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 4 {
 			panic(vm.NewGoError(fmt.Errorf("encrypt requires 4 arguments: algorithm, key, iv, and plaintext")))
 		}
@@ -506,13 +518,13 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		authTag := sealed[len(sealed)-aead.Overhead():]
 
 		result := vm.NewObject()
-		result.Set("ciphertext", vm.NewArrayBuffer(ciphertext))
-		result.Set("authTag", vm.NewArrayBuffer(authTag))
+		mustObjectSet(result, "ciphertext", vm.NewArrayBuffer(ciphertext))
+		mustObjectSet(result, "authTag", vm.NewArrayBuffer(authTag))
 		return result
 	})
 
 	// crypto.decrypt(algorithm, key, iv, authTag, ciphertext)
-	cryptoObj.Set("decrypt", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"decrypt", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 5 {
 			panic(vm.NewGoError(fmt.Errorf("decrypt requires 5 arguments: algorithm, key, iv, authTag, and ciphertext")))
 		}
@@ -553,7 +565,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	// --- Public Key Crypto ---
 
 	// crypto.rsaEncrypt(publicKey, hash, plaintext)
-	cryptoObj.Set("rsaEncrypt", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"rsaEncrypt", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("rsaEncrypt requires 3 arguments: publicKey, hash, and plaintext")))
 		}
@@ -585,7 +597,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.rsaDecrypt(privateKey, hash, ciphertext)
-	cryptoObj.Set("rsaDecrypt", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"rsaDecrypt", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("rsaDecrypt requires 3 arguments: privateKey, hash, and ciphertext")))
 		}
@@ -617,7 +629,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.rsaSign(privateKey, hash, data)
-	cryptoObj.Set("rsaSign", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"rsaSign", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("rsaSign requires 3 arguments: privateKey, hash, and data")))
 		}
@@ -653,7 +665,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.rsaVerify(publicKey, hash, data, signature)
-	cryptoObj.Set("rsaVerify", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"rsaVerify", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 4 {
 			panic(vm.NewGoError(fmt.Errorf("rsaVerify requires 4 arguments: publicKey, hash, data, and signature")))
 		}
@@ -690,7 +702,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.ecdsaSign(privateKey, hash, data)
-	cryptoObj.Set("ecdsaSign", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"ecdsaSign", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			panic(vm.NewGoError(fmt.Errorf("ecdsaSign requires 3 arguments: privateKey, hash, and data")))
 		}
@@ -726,7 +738,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.ecdsaVerify(publicKey, hash, data, signature)
-	cryptoObj.Set("ecdsaVerify", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"ecdsaVerify", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 4 {
 			panic(vm.NewGoError(fmt.Errorf("ecdsaVerify requires 4 arguments: publicKey, hash, data, and signature")))
 		}
@@ -762,7 +774,7 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 	})
 
 	// crypto.ecdh(privateKey, publicKey)
-	cryptoObj.Set("ecdh", func(call goja.FunctionCall) goja.Value {
+	mustObjectSet(cryptoObj,"ecdh", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(vm.NewGoError(fmt.Errorf("ecdh requires 2 arguments: privateKey and publicKey")))
 		}
@@ -801,12 +813,12 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 			panic(vm.NewGoError(fmt.Errorf("unsupported elliptic curve")))
 		}
 
-		ecdhPrivKey, err := c.NewPrivateKey(privKey.D.Bytes())
+		ecdhPrivKey, err := c.NewPrivateKey(privKey.D.Bytes()) //nolint:staticcheck // SA1019: bridge ecdsa.PrivateKey to ecdh for shared secret.
 		if err != nil {
 			panic(vm.NewGoError(fmt.Errorf("failed to create ECDH private key: %w", err)))
 		}
 
-		pubBytes := elliptic.Marshal(pubKey.Curve, pubKey.X, pubKey.Y)
+		pubBytes := elliptic.Marshal(pubKey.Curve, pubKey.X, pubKey.Y) //nolint:staticcheck // SA1019: wire format for ecdh.NewPublicKey on same curve.
 		ecdhPubKey, err := c.NewPublicKey(pubBytes)
 		if err != nil {
 			panic(vm.NewGoError(fmt.Errorf("failed to create ECDH public key from bytes: %w", err)))
@@ -820,14 +832,14 @@ func newScriptEngine(scriptPath string) (*ScriptEngine, error) {
 		return vm.ToValue(vm.NewArrayBuffer(shared))
 	})
 
-	vm.Set("crypto", cryptoObj)
+	mustRuntimeSet(vm, "crypto", cryptoObj)
 
 	// Set up a CommonJS-like environment by creating `module` and `exports`
 	exports := vm.NewObject()
 	module := vm.NewObject()
-	module.Set("exports", exports)
-	vm.Set("module", module)
-	vm.Set("exports", exports) // Allow using 'exports.handlePacket = ...' directly
+	mustObjectSet(module, "exports", exports)
+	mustRuntimeSet(vm, "module", module)
+	mustRuntimeSet(vm, "exports", exports) // Allow using 'exports.handlePacket = ...' directly
 
 	// Execute the script
 	_, err = vm.RunScript(filepath.Base(scriptPath), string(scriptBytes))
@@ -1022,7 +1034,7 @@ func encodeString(s string) []byte {
 		s = s[:65535] // MQTT strings are limited by uint16
 	}
 	encoded := make([]byte, 2+len(s))
-	binary.BigEndian.PutUint16(encoded, uint16(len(s)))
+	binary.BigEndian.PutUint16(encoded, uint16(len(s))) //#nosec G115 - len(s) capped to 65535 above.
 	copy(encoded[2:], s)
 	return encoded
 }
@@ -1039,13 +1051,6 @@ func prettyPrintJSON(jsonStr string) string {
 	}
 
 	return string(pretty)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func hexToASCII(hexData []byte) string {
@@ -1302,7 +1307,7 @@ func analyzeCONNECT(payload []byte) {
 		}
 		password := payload[offset : offset+msgLen]
 		log.Printf("    Password: %s", hex.EncodeToString(password))
-		offset += msgLen
+		offset += msgLen //nolint:ineffassign // advance offset for clarity if CONNECT layout gains trailing fields
 	}
 }
 
@@ -1426,7 +1431,7 @@ func analyzeSimpleAck(name string, payload []byte) {
 }
 
 func handleConnection(clientConn net.Conn, username, password string) {
-	defer clientConn.Close()
+	defer clientConn.Close() //nolint:errcheck // ignore Close errors in defer (common cleanup pattern)
 	log.Printf("Accepted connection from %s", clientConn.RemoteAddr())
 
 	// 1. Setup Client -> Proxy connection (clientSideConn)
@@ -1459,7 +1464,7 @@ func handleConnection(clientConn net.Conn, username, password string) {
 			return // Cannot proceed
 		}
 		tlsServer, err := tls.Dial("tcp", brokerAddr, &tls.Config{
-			InsecureSkipVerify: true,
+			InsecureSkipVerify: true, //#nosec G402 - MITM proxy terminates TLS to broker; verification is optional for lab use.
 			Certificates:       []tls.Certificate{clientCert},
 		})
 		if err != nil {
@@ -1478,7 +1483,7 @@ func handleConnection(clientConn net.Conn, username, password string) {
 		serverSideConn = tcpConn
 		log.Printf("Connected to real broker at %s using plaintext TCP.", brokerAddr)
 	}
-	defer serverSideConn.Close()
+	defer serverSideConn.Close() //nolint:errcheck // ignore Close errors in defer (common cleanup pattern)
 
 	// Create buffers for handling fragmented MQTT packets
 	clientToServerBuffer := &MQTTBuffer{}
@@ -1767,7 +1772,7 @@ func rebuildConnectPacket(originalPacket []byte, newUsername, newPassword string
 		}
 		willMessage := payload[offset : offset+msgLen]
 		newPayload.Write(encodeString(string(willMessage))) // Will Message is a binary payload, encodeString handles length
-		offset += msgLen
+		offset += msgLen //nolint:ineffassign // advance offset for clarity if CONNECT payload layout changes
 	}
 
 	// --- New Credentials ---
@@ -1813,7 +1818,8 @@ func isMostlyPrintable(data []byte) bool {
 
 func printProxyUsage() {
 	fmt.Println("MQTT Interception Proxy for Zancudo")
-	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)\n")
+	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)")
+	fmt.Println()
 	fmt.Println("Usage: zancudo [flags]")
 	fmt.Println("\nFlags:")
 	fmt.Println("  --listen <addr:port>      Address and port for the proxy to listen on (default: :8883)")
@@ -1893,7 +1899,7 @@ func main() {
 	if len(jwtVerifyKeys) > 0 {
 		log.Println("Loading JWT verification keys...")
 		for _, keyPath := range jwtVerifyKeys {
-			pem, err := os.ReadFile(keyPath)
+			pem, err := os.ReadFile(keyPath) //#nosec G304 -- path from repeated --jwt-key CLI flag.
 			if err != nil {
 				log.Printf("  [!] Failed to read key file %s: %v", keyPath, err)
 				continue
@@ -1946,7 +1952,7 @@ func loadProtobufSchemas(paths []string) {
 		}
 		if stat.IsDir() {
 			importPaths = append(importPaths, p)
-			filepath.Walk(p, func(path string, info os.FileInfo, err error) error {
+			if err := filepath.Walk(p, func(path string, info os.FileInfo, err error) error {
 				if err != nil {
 					return err
 				}
@@ -1958,7 +1964,9 @@ func loadProtobufSchemas(paths []string) {
 					protoFileToPath[rel] = p
 				}
 				return nil
-			})
+			}); err != nil {
+				log.Printf("  [!] cannot access proto path %s: %v", p, err)
+			}
 		} else {
 			if strings.HasSuffix(p, ".proto") {
 				dir := filepath.Dir(p)
@@ -2481,18 +2489,23 @@ func tryProtobuf(data []byte) bool {
 			p = p[8:]
 		case 2: // Length-delimited
 			l, n := binary.Uvarint(p)
-			if n <= 0 || len(p) < int(l)+n {
+			if n <= 0 {
 				p = nil
 				break
 			}
+			if n > len(p) || uint64(len(p)-n) < l {
+				p = nil
+				break
+			}
+			ln := int(l) //#nosec G115 - l bounded by len(p)-n above (slice length fits int on supported platforms).
 			p = p[n:]
-			payload := p[:l]
+			payload := p[:ln]
 			if isMostlyPrintable(payload) {
 				valStr = fmt.Sprintf("\"%s\"", string(payload))
 			} else {
-				valStr = fmt.Sprintf("bytes(%d)", l)
+				valStr = fmt.Sprintf("bytes(%d)", ln)
 			}
-			p = p[l:]
+			p = p[ln:]
 		case 5: // 32-bit
 			if len(p) < 4 {
 				p = nil
@@ -2506,7 +2519,7 @@ func tryProtobuf(data []byte) bool {
 		if len(p) == 0 {
 			valid = true // reached end of buffer cleanly
 		}
-		out.WriteString(fmt.Sprintf("    Field %d (type %d): %s\n", fieldNum, wireType, valStr))
+		fmt.Fprintf(&out, "    Field %d (type %d): %s\n", fieldNum, wireType, valStr)
 	}
 
 	if valid {
@@ -2550,7 +2563,6 @@ func tryIon(data []byte) bool {
 			switch v.(type) {
 			case map[string]interface{}, []interface{}:
 				isComplexFound = true
-				break
 			}
 			if isComplexFound {
 				break

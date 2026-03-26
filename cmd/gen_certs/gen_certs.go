@@ -47,7 +47,8 @@ func main() {
 
 func printUsage() {
 	fmt.Println("Certificate generator for Zancudo")
-	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)\n")
+	fmt.Println("Authors: Jorge Alvarez (poro@versprite.com) and Mario Vilas (marito@versprite.com)")
+	fmt.Println()
 	fmt.Println("Usage: gen_certs <subcommand> [options]")
 	fmt.Println("\nSubcommands:")
 	fmt.Println("  fetch   Fetch a remote certificate and clone it.")
@@ -74,12 +75,16 @@ func addCASigningFlags(fs *flag.FlagSet) (*string, *string, *bool) {
 }
 
 func handleFetch() {
-	fetchCmd := flag.NewFlagSet("fetch", flag.ExitOnError)
+	fetchCmd := flag.NewFlagSet("fetch", flag.ContinueOnError)
+	fetchCmd.SetOutput(os.Stderr)
 	proxyHostname := fetchCmd.String("proxy-hostname", "", "Optional: a hostname or IP to issue the new certificate for, instead of the original's.")
 	outCert := fetchCmd.String("out-cert", "proxy.crt", "Output path for the new certificate.")
 	outKey := fetchCmd.String("out-key", "proxy.key", "Output path for the new private key.")
 	caCertPath, caKeyPath, genCA := addCASigningFlags(fetchCmd)
-	fetchCmd.Parse(os.Args[2:])
+	if err := fetchCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	if fetchCmd.NArg() != 1 {
 		log.Fatal("fetch command requires exactly one argument: <hostname:port>")
@@ -88,12 +93,16 @@ func handleFetch() {
 
 	log.Printf("Fetching certificate from %s...", remoteAddr)
 	conn, err := tls.Dial("tcp", remoteAddr, &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, //#nosec G402 -- fetch presented leaf cert for MITM proxy tooling; verifying the chain is not the goal here.
 	})
 	if err != nil {
 		log.Fatalf("Failed to connect to %s: %v", remoteAddr, err)
 	}
-	defer conn.Close()
+	defer func() {
+		if cerr := conn.Close(); cerr != nil {
+			log.Printf("warning: closing TLS connection: %v", cerr)
+		}
+	}()
 
 	peerCerts := conn.ConnectionState().PeerCertificates
 	if len(peerCerts) == 0 {
@@ -108,12 +117,16 @@ func handleFetch() {
 }
 
 func handleClone() {
-	cloneCmd := flag.NewFlagSet("clone", flag.ExitOnError)
+	cloneCmd := flag.NewFlagSet("clone", flag.ContinueOnError)
+	cloneCmd.SetOutput(os.Stderr)
 	proxyHostname := cloneCmd.String("proxy-hostname", "", "Optional: a hostname or IP to issue the new certificate for, instead of the original's.")
 	outCert := cloneCmd.String("out-cert", "client.crt", "Output path for the new certificate.")
 	outKey := cloneCmd.String("out-key", "client.key", "Output path for the new private key.")
 	caCertPath, caKeyPath, genCA := addCASigningFlags(cloneCmd)
-	cloneCmd.Parse(os.Args[2:])
+	if err := cloneCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	if cloneCmd.NArg() != 1 {
 		log.Fatal("clone command requires exactly one argument: <path_to_cert.pem>")
@@ -121,7 +134,7 @@ func handleClone() {
 	certPath := cloneCmd.Arg(0)
 
 	log.Printf("Reading certificate from %s...", certPath)
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(certPath) //#nosec G304 -- certPath is the user-supplied PEM path from the clone subcommand.
 	if err != nil {
 		log.Fatalf("Failed to read certificate file: %v", err)
 	}
@@ -289,7 +302,7 @@ func generateSignedCertificate(template *x509.Certificate, proxyHostname string,
 
 func saveCertAndKey(cert *x509.Certificate, key *rsa.PrivateKey, certPath, keyPath string) error {
 	// Save certificate
-	certOut, err := os.Create(certPath)
+	certOut, err := os.Create(certPath) //#nosec G304 -- path from explicit --out-cert CLI flag.
 	if err != nil {
 		return fmt.Errorf("failed to open %s for writing: %w", certPath, err)
 	}
@@ -301,7 +314,7 @@ func saveCertAndKey(cert *x509.Certificate, key *rsa.PrivateKey, certPath, keyPa
 	}
 
 	// Save private key
-	keyOut, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	keyOut, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //#nosec G304 -- path from explicit --out-key CLI flag.
 	if err != nil {
 		return fmt.Errorf("failed to open %s for writing: %w", keyPath, err)
 	}
