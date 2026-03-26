@@ -22,8 +22,19 @@ import (
 	"time"
 )
 
+// Set at link time via: -ldflags "-X main.version=..." (see Makefile). Default for plain go build.
+var version = "dev"
+
 func main() {
 	log.SetFlags(0)
+
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "version", "--version", "-version", "-V":
+			fmt.Println(version)
+			os.Exit(0)
+		}
+	}
 
 	if len(os.Args) < 2 {
 		printUsage()
@@ -63,6 +74,8 @@ func printUsage() {
 	fmt.Println("  --ca-cert <path>          Path to the CA certificate file for signing.")
 	fmt.Println("  --ca-key <path>           Path to the CA private key file for signing.")
 	fmt.Println("  --gen-ca                  Generate a new root CA and use it for signing (saved as ca.crt and ca.key).")
+	fmt.Println("\nGlobal options:")
+	fmt.Println("  --version, -version, -V   Print version and exit.")
 	fmt.Println("\nFlags can also be seen by running the subcommand with -h, e.g.:")
 	fmt.Println("  gen_certs fetch -h")
 }

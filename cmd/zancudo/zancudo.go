@@ -129,6 +129,9 @@ var (
 	noColor             bool
 )
 
+// Set at link time via: -ldflags "-X main.version=..." (see Makefile). Default for plain go build.
+var version = "dev"
+
 // Command line options
 var (
 	proxyListenAddr string
@@ -143,8 +146,9 @@ var (
 	username string
 	password string
 
-	verbose    bool
-	vShorthand bool // for -v alias
+	verbose       bool
+	vShorthand    bool // for -v alias
+	showVersion   bool
 
 	jwtVerifyKeys      multiStringFlag
 	loadedJWTKeys      []interface{}
@@ -1835,6 +1839,7 @@ func printProxyUsage() {
 	fmt.Println("  --verbose, -v             Enable verbose output")
 	fmt.Println("  --no-color                Disable colored output (useful for piping to files).")
 	fmt.Println("  --script <path>           Path to a JavaScript file for extending the proxy.")
+	fmt.Println("  --version                 Print version and exit.")
 }
 
 func main() {
@@ -1855,8 +1860,14 @@ func main() {
 	flag.BoolVar(&vShorthand, "v", false, "Enable verbose output (shorthand)")
 	flag.BoolVar(&noColor, "no-color", false, "Disable colorized output")
 	flag.StringVar(&scriptPath, "script", "", "Path to a JavaScript file for extending the proxy.")
+	flag.BoolVar(&showVersion, "version", false, "Print version and exit.")
 
 	flag.Parse()
+
+	if showVersion {
+		fmt.Println(version)
+		os.Exit(0)
+	}
 
 	verbose = verbose || vShorthand
 

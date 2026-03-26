@@ -1,6 +1,14 @@
 # List of applications to build. The name must match the folder in ./cmd/
 BINS := zancudo gen_certs
 
+# Single source of truth for release version (read by both binaries via -ldflags; see cmd/*/main).
+VERSION_FILE := VERSION
+VERSION := $(shell if test -f '$(VERSION_FILE)'; then head -n1 '$(VERSION_FILE)' | tr -d '\r\n'; fi)
+ifeq ($(strip $(VERSION)),)
+VERSION := dev
+endif
+GO_LDFLAGS := -ldflags "-X main.version=$(VERSION)"
+
 # Base output directories
 BIN_DIR := bin
 DIST_DIR := dist
@@ -142,22 +150,22 @@ macos-zip: $(MACOS_AMD64_ZIP) $(MACOS_ARM64_ZIP)
 # Rule for Linux amd64 binaries
 $(LINUX_AMD64_BINS): $(LINUX_AMD64_DIR)/%: | $(LINUX_AMD64_DIR)
 	@echo "Building Linux amd64 binary for $*..."
-	(cd ./cmd/$* && GOOS=linux GOARCH=amd64 go build -o ../../$@ .)
+	(cd ./cmd/$* && GOOS=linux GOARCH=amd64 go build $(GO_LDFLAGS) -o ../../$@ .)
 
 # Rule for Windows binaries
 $(WINDOWS_BINS): $(WINDOWS_DIR)/%.exe: | $(WINDOWS_DIR)
 	@echo "Building Windows binary for $*..."
-	(cd ./cmd/$* && GOOS=windows GOARCH=amd64 go build -o ../../$@ .)
+	(cd ./cmd/$* && GOOS=windows GOARCH=amd64 go build $(GO_LDFLAGS) -o ../../$@ .)
 
 # Rule for macOS amd64 binaries
 $(MACOS_AMD64_BINS): $(MACOS_AMD64_DIR)/%: | $(MACOS_AMD64_DIR)
 	@echo "Building macOS amd64 binary for $*..."
-	(cd ./cmd/$* && GOOS=darwin GOARCH=amd64 go build -o ../../$@ .)
+	(cd ./cmd/$* && GOOS=darwin GOARCH=amd64 go build $(GO_LDFLAGS) -o ../../$@ .)
 
 # Rule for macOS arm64 binaries
 $(MACOS_ARM64_BINS): $(MACOS_ARM64_DIR)/%: | $(MACOS_ARM64_DIR)
 	@echo "Building macOS arm64 binary for $*..."
-	(cd ./cmd/$* && GOOS=darwin GOARCH=arm64 go build -o ../../$@ .)
+	(cd ./cmd/$* && GOOS=darwin GOARCH=arm64 go build $(GO_LDFLAGS) -o ../../$@ .)
 
 # --- Zip Creation Rules ---
 
