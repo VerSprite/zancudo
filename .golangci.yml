@@ -1,0 +1,6 @@
+# https://golangci-lint.run/usage/configuration/
+# golangci-lint searches upward from each module directory for this file.
+version: "2"
+
+run:
+  timeout: 5m

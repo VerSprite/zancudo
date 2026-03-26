@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - cmd/zancudo
+          - cmd/gen_certs
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache: true
+
+      - name: Install goimports
+        run: go install golang.org/x/tools/cmd/goimports@latest
+
+      - name: Verify formatting (goimports)
+        run: |
+          GOIMPORTS="$(go env GOPATH)/bin/goimports"
+          out="$("$GOIMPORTS" -local github.com/VerSprite -l .)"
+          if [ -n "$out" ]; then
+            echo "The following files need goimports (or gofmt):"
+            echo "$out"
+            exit 1
+          fi
+
+      - name: golangci-lint (incl. gosec)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: ${{ matrix.module }}
+          # Adds gosec on top of golangci-lint defaults (staticcheck, govet, etc.).
+          args: --enable=gosec
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
