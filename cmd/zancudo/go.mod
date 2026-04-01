@@ -6,7 +6,7 @@ require (
 	github.com/amazon-ion/ion-go v1.5.0
 	github.com/brightcove/playback_go-smile v0.0.0-20260128153759-57a2bb174369
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
-	github.com/fxamacker/cbor/v2 v2.9.0
+	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/jhump/protoreflect v1.18.0
 	github.com/jmank88/ubjson v1.3.1
