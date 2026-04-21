@@ -144,6 +144,6 @@ We believe ZANCUDO fills a critical gap in the security tester's toolkit. It was
 We're excited to share it with the community and can't wait to see what you do with it.
 
 You can find the project, along with full documentation and examples, on our GitHub:
-**[Link to your GitHub repository here]**
+**https://github.com/VerSprite/zancudo/**
 
 Give it a try on your next IoT engagement. We welcome your feedback, feature requests, and contributions!
