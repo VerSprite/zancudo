@@ -60,7 +60,7 @@ Running the proxy is simple. You tell it where to listen and where the real brok
 
 The output is clear and color-coded, immediately showing you the content of conversations.
 
-https://github.com/user-attachments/assets/2247be1c-b956-4847-9541-2fd73604890b
+https://github.com/user-attachments/assets/65afb03d-14e5-45b8-a1f9-c7f4299497bd
 
 ### The Ultimate Power-Up: Scripting with JavaScript
 
