@@ -60,6 +60,8 @@ Running the proxy is simple. You tell it where to listen and where the real brok
 
 The output is clear and color-coded, immediately showing you the content of conversations.
 
+https://github.com/user-attachments/assets/2247be1c-b956-4847-9541-2fd73604890b
+
 ### The Ultimate Power-Up: Scripting with JavaScript
 
 This is where ZANCUDO transforms from a useful tool into a game-changer. Like Burp's extensions or mitmproxy's scripts, you can load a custom JavaScript file to implement any logic you need. This is how we tackled the custom payload encryption in our engagement.
