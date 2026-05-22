@@ -47,7 +47,7 @@ import (
 	"github.com/jhump/protoreflect/desc/protoparse" //nolint:staticcheck // SA1019: protoparse wrapper; migration to protocompile is non-trivial.
 	"github.com/jhump/protoreflect/dynamic"         //nolint:staticcheck // SA1019: dynamic messages for v1 descriptors.
 	"github.com/vmihailenco/msgpack/v5"
-	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"gopkg.in/yaml.v3"
 
 	"github.com/amazon-ion/ion-go/ion"
