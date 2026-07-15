@@ -11,7 +11,7 @@ require (
 	github.com/jhump/protoreflect v1.18.0
 	github.com/jmank88/ubjson v1.3.1
 	github.com/vmihailenco/msgpack/v5 v5.4.1
-	go.mongodb.org/mongo-driver/v2 v2.6.1
+	go.mongodb.org/mongo-driver/v2 v2.8.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
