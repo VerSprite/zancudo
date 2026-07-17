@@ -63,6 +63,7 @@ help:
 		'  \033[1;32mmake ci-check\033[0m     goimports -l, golangci-lint --enable=gosec, govulncheck per module' \
 		'  \033[1;32mmake ci-fix\033[0m       goimports -w, golangci-lint --fix, then govulncheck (vulns: report only)' '' \
 		'\033[1;33mOther\033[0m' \
+		'  \033[1;32mmake update\033[0m       Update Go dependencies' \
 		'  \033[1;32mmake clean\033[0m        Remove bin/, dist/, and generated cert files in repo root' ''
 
 # --- CI parity (same checks as .github/workflows/ci.yml) ---
@@ -199,3 +200,10 @@ clean:
 	rm -rf $(BIN_DIR) $(DIST_DIR)
 	rm -f proxy.crt proxy.key client.crt client.key ca.crt ca.key
 	@echo "Done."
+
+# --- Maintenance ---
+update:
+	set -e; for d in cmd/*; do ( \
+		cd "$$d" && echo "Updating: $$d" && \
+		go mod tidy && go get -u ./... && go mod tidy \
+	); done
