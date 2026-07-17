@@ -58,7 +58,7 @@ help:
 		'  \033[1;32mmake linux-zip\033[0m    Linux zip only (needs linux + README assets)' \
 		'  \033[1;32mmake windows-zip\033[0m  Windows zip only' \
 		'  \033[1;32mmake macos-zip\033[0m    Mac OS zips only' '' \
-		'\033[1;33mCode quality\033[0m \033[2m(mirrors .github/workflows/ci.yml; needs Go per cmd/*/go.mod):\033[0m' \
+		'\033[1;33mCode quality\033[0m' \
 		'  \033[1;32mmake ci-tools\033[0m     Install goimports, golangci-lint, govulncheck to GOBIN/GOPATH/bin' \
 		'  \033[1;32mmake ci-check\033[0m     goimports -l, golangci-lint --enable=gosec, govulncheck per module' \
 		'  \033[1;32mmake ci-fix\033[0m       goimports -w, golangci-lint --fix, then govulncheck (vulns: report only)' '' \
