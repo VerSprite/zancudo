@@ -24,9 +24,9 @@ jobs:
         working-directory: ${{ matrix.module }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache: true
