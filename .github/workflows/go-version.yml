@@ -1,0 +1,126 @@
+name: Go version
+
+# Bumps the `go` directive in every module to the latest stable release.
+# Dependabot handles module dependencies but never touches the Go toolchain,
+# which is the gap this workflow fills.
+#
+# The Makefile derives CI_GO_TOOLCHAIN from cmd/zancudo/go.mod and ci.yml uses
+# `go-version-file`, so rewriting the go.mod files updates everything else.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC, matching the dependabot cadence.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: go-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump Go toolchain
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve latest stable Go
+        id: resolve
+        run: |
+          set -euo pipefail
+
+          latest="$(curl -fsSL 'https://go.dev/dl/?mode=json' \
+            | jq -er '[.[] | select(.stable)][0].version')"
+          latest="${latest#go}"
+          current="$(awk '/^go / { print $2; exit }' cmd/zancudo/go.mod)"
+
+          echo "latest=$latest"   >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+
+          # Only ever move the pin forward: the newer of the two must be the
+          # release we just fetched, and it must differ from what is pinned.
+          newer="$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n1)"
+          if [ "$current" = "$latest" ] || [ "$newer" != "$latest" ]; then
+            echo "Go $current is up to date (latest stable: $latest)."
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Bumping Go $current -> $latest"
+            echo "bump=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rewrite go directives
+        if: steps.resolve.outputs.bump == 'true'
+        env:
+          LATEST: ${{ steps.resolve.outputs.latest }}
+        run: |
+          set -euo pipefail
+
+          for mod in cmd/zancudo/go.mod cmd/gen_certs/go.mod; do
+            sed -i -E "s/^go [0-9]+(\.[0-9]+)*\$/go ${LATEST}/" "$mod"
+            if ! grep -qxF "go ${LATEST}" "$mod"; then
+              echo "Failed to rewrite the go directive in $mod" >&2
+              exit 1
+            fi
+          done
+
+          git --no-pager diff --stat
+
+      - name: Set up Go ${{ steps.resolve.outputs.latest }}
+        if: steps.resolve.outputs.bump == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ steps.resolve.outputs.latest }}
+          cache: false
+
+      - name: Build every module with the new toolchain
+        if: steps.resolve.outputs.bump == 'true'
+        run: |
+          set -euo pipefail
+
+          for mod in cmd/zancudo cmd/gen_certs; do
+            echo "== go build $mod =="
+            ( cd "$mod" && go build ./... )
+          done
+
+      - name: Open pull request
+        if: steps.resolve.outputs.bump == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE: ${{ github.event.repository.default_branch }}
+          BRANCH: chore/go-${{ steps.resolve.outputs.latest }}
+          LATEST: ${{ steps.resolve.outputs.latest }}
+          CURRENT: ${{ steps.resolve.outputs.current }}
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "Branch $BRANCH already exists; a pull request was opened for Go $LATEST on an earlier run."
+            exit 0
+          fi
+
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          git switch -c "$BRANCH"
+          git commit -am "Update Go version to ${LATEST}"
+          git push origin "$BRANCH"
+
+          body="$(printf '%s\n' \
+            "Bumps the \`go\` directive in \`cmd/zancudo/go.mod\` and \`cmd/gen_certs/go.mod\` from \`${CURRENT}\` to \`${LATEST}\`." \
+            "" \
+            "Verified in the workflow run: both modules build with Go \`${LATEST}\`." \
+            "" \
+            "GitHub does not trigger workflows for pull requests opened with \`GITHUB_TOKEN\`, so \`ci.yml\` will not run here on its own. Close and reopen this pull request, or push an empty commit, to get the full lint and govulncheck gate." \
+            "" \
+            "Opened by the \`Go version\` workflow.")"
+
+          gh pr create \
+            --base "$BASE" \
+            --head "$BRANCH" \
+            --title "Update Go version to ${LATEST}" \
+            --body "$body"

@@ -1,10 +1,32 @@
 version: 2
 updates:
+  # Go dependencies, one batched pull request per module per week.
+  # The gen_certs module is standard library only; the entry is kept so a
+  # future dependency there is picked up without a config change.
   - package-ecosystem: "gomod"
     directory: "/cmd/zancudo"
     schedule:
       interval: "weekly"
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: "gomod"
     directory: "/cmd/gen_certs"
     schedule:
       interval: "weekly"
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+
+  # Actions pinned in .github/workflows/ (checkout, setup-go, golangci-lint).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

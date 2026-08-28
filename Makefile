@@ -43,7 +43,7 @@ RELEASE_FILES := README.md ZANCUDO.png LICENSE $(VERSION_FILE)
 .DEFAULT_GOAL := help
 
 .PHONY: help all clean linux windows macos zips linux-zip windows-zip macos-zip \
-	ci-tools ci-check ci-fix _ci_binaries
+	ci-tools ci-check ci-fix _ci_binaries update
 
 # ANSI colors: used only by the `help` target (bold cyan title, yellow sections, green commands, dim hints).
 help:
