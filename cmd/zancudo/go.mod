@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/amazon-ion/ion-go v1.5.0
 	github.com/brightcove/playback_go-smile v0.0.0-20260128153759-57a2bb174369
-	github.com/dop251/goja v0.0.0-20260911104922-fabc3b8078ad
+	github.com/dop251/goja v0.0.0-20260915173639-b3fa02110dbd
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/jhump/protoreflect v1.18.1
