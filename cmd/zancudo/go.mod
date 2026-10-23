@@ -1,32 +1,32 @@
 module github.com/VerSprite/MQTT-Proxy
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/amazon-ion/ion-go v1.5.0
 	github.com/brightcove/playback_go-smile v0.0.0-20260128153759-57a2bb174369
-	github.com/dop251/goja v0.0.0-20260926152631-39ec2650adc9
-	github.com/fxamacker/cbor/v2 v2.9.4
+	github.com/dop251/goja v0.0.0-20261023133238-1622cea953df
+	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/golang-jwt/jwt/v4 v4.5.2
-	github.com/jhump/protoreflect v1.18.1
+	github.com/jhump/protoreflect v1.19.0
 	github.com/jmank88/ubjson v1.3.1
 	github.com/vmihailenco/msgpack/v5 v5.4.1
-	go.mongodb.org/mongo-driver/v2 v2.9.1
+	go.mongodb.org/mongo-driver/v2 v2.9.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	github.com/dlclark/regexp2/v2 v2.8.0 // indirect
+	github.com/dlclark/regexp2/v2 v2.9.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/pprof v0.0.0-20260926063103-aaccee046517 // indirect
-	github.com/jhump/protoreflect/v2 v2.0.0-beta.2 // indirect
+	github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50 // indirect
+	github.com/jhump/protoreflect/v2 v2.0.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/petermattis/goid v0.0.0-20260918085751-abfca077860b // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
