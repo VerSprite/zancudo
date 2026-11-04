@@ -2,8 +2,8 @@ github.com/Masterminds/semver/v3 v3.5.0 h1:kQceYJfbupGfZOKZQg0kou0DgAKhzDg2NZPAw
 github.com/Masterminds/semver/v3 v3.5.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/amazon-ion/ion-go v1.5.0 h1:fxsAyFda8N9HsM2xYbQSxJ3Qi/oLn0xzLoiXWG3bseg=
 github.com/amazon-ion/ion-go v1.5.0/go.mod h1:3ZEje8i20TiIPVZlN+KE3B2ppZ1B8d9F/KaT7Dtec+k=
-github.com/brightcove/playback_go-smile v0.0.0-20260128153759-57a2bb174369 h1:x53ERenQFY6I5YQsQW+lPkBmQL2QCLKAHUcVdf+P0aY=
-github.com/brightcove/playback_go-smile v0.0.0-20260128153759-57a2bb174369/go.mod h1:lKPpCHBNpNhGKX47/wQ3w9A5fruCp+XWUxU8mvu2nvk=
+github.com/brightcove/playback_go-smile v1.0.0 h1:/GDinSNKY26KHG23DDcTq5lpHaExGRYFqJAh4WiZNu4=
+github.com/brightcove/playback_go-smile v1.0.0/go.mod h1:7tQuelnsXCb5d7+tiBFoXU4hmxKSCmtyRzQJ/t6iy6s=
 github.com/bufbuild/protocompile v0.14.1 h1:iA73zAf/fyljNjQKwYzUHD6AD4R8KMasmwa/FBatYVw=
 github.com/bufbuild/protocompile v0.14.1/go.mod h1:ppVdAIhbr2H8asPk6k4pY7t9zB1OU5DoEw9xY/FUi1c=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
@@ -14,8 +14,8 @@ github.com/dlclark/regexp2/v2 v2.9.1 h1:q6bZW/NN9VodqMjYXpuic2lZxdHPfFTzGS+MJxIJ
 github.com/dlclark/regexp2/v2 v2.9.1/go.mod h1:avUrQvPaLz2DrFNHJF0taWAFFX2C1GMSSoeiqFjcBmU=
 github.com/dop251/goja v0.0.0-20261023133238-1622cea953df h1:ldUmgGjVsJuNgA14RtTooak1yTfNlEvXyhq8ibidEx8=
 github.com/dop251/goja v0.0.0-20261023133238-1622cea953df/go.mod h1:Cp9NYOLrEKg/ypIRkUWYXWLuKAyyFGkDmGeJ95Sw0zI=
-github.com/fxamacker/cbor/v2 v2.9.6 h1:NHZPxuUjJXQjX9itA785y/5NKSlI4HQ+S7noZsmI7hs=
-github.com/fxamacker/cbor/v2 v2.9.6/go.mod h1:4EaZp6ClVunETjQ4GHmGNzysDK91Lr+r6Yz6tJqzVCw=
+github.com/fxamacker/cbor/v2 v2.10.0 h1:HVF3T5vYwLqO81ebPirWEPNv2SMrUMD3HLnKgEr6uWE=
+github.com/fxamacker/cbor/v2 v2.10.0/go.mod h1:uSwlToFuT9BZAKRxxVm3qQC8DR4tlWl7D6pf20iRYH4=
 github.com/go-sourcemap/sourcemap v2.1.4+incompatible h1:a+iTbH5auLKxaNwQFg0B+TCYl6lbukKPc7b5x0n1s6Q=
 github.com/go-sourcemap/sourcemap v2.1.4+incompatible/go.mod h1:F8jJfvm2KbVjc5NqelyYJmf/v5J0dwNLS2mL4sNA1Jg=
 github.com/goccy/go-yaml v1.19.2 h1:PmFC1S6h8ljIz6gMRBopkjP1TVT7xuwrButHID66PoM=
