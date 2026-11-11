@@ -52,6 +52,9 @@ jobs:
           # Adds gosec on top of golangci-lint defaults (staticcheck, govet, etc.).
           args: --enable=gosec
 
+      - name: Run tests
+        run: go test ./...
+
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest

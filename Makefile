@@ -43,7 +43,7 @@ RELEASE_FILES := README.md ZANCUDO.png LICENSE $(VERSION_FILE)
 .DEFAULT_GOAL := help
 
 .PHONY: help all clean linux windows macos zips linux-zip windows-zip macos-zip \
-	ci-tools ci-check ci-fix _ci_binaries update
+	ci-tools ci-check ci-fix _ci_binaries test update
 
 # ANSI colors: used only by the `help` target (bold cyan title, yellow sections, green commands, dim hints).
 help:
@@ -59,8 +59,9 @@ help:
 		'  \033[1;32mmake windows-zip\033[0m  Windows zip only' \
 		'  \033[1;32mmake macos-zip\033[0m    Mac OS zips only' '' \
 		'\033[1;33mCode quality\033[0m' \
+		'  \033[1;32mmake test\033[0m         go test ./... per module' \
 		'  \033[1;32mmake ci-tools\033[0m     Install goimports, golangci-lint, govulncheck to GOBIN/GOPATH/bin' \
-		'  \033[1;32mmake ci-check\033[0m     goimports -l, golangci-lint --enable=gosec, govulncheck per module' \
+		'  \033[1;32mmake ci-check\033[0m     goimports -l, golangci-lint --enable=gosec, go test, govulncheck per module' \
 		'  \033[1;32mmake ci-fix\033[0m       goimports -w, golangci-lint --fix, then govulncheck (vulns: report only)' '' \
 		'\033[1;33mOther\033[0m' \
 		'  \033[1;32mmake update\033[0m       Update Go dependencies' \
@@ -87,7 +88,7 @@ ci-tools:
 	cd cmd/zancudo && GOTOOLCHAIN=$(CI_GO_TOOLCHAIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	cd cmd/zancudo && GOTOOLCHAIN=$(CI_GO_TOOLCHAIN) go install golang.org/x/vuln/cmd/govulncheck@latest
 
-# Verify: goimports, golangci-lint (incl. gosec), govulncheck per module under cmd/*
+# Verify: goimports, golangci-lint (incl. gosec), go test, govulncheck per module under cmd/*
 ci-check: _ci_binaries
 	@set -e; \
 	for m in $(GO_MODULES); do \
@@ -104,6 +105,7 @@ ci-check: _ci_binaries
 		echo "== golangci-lint $$m =="; \
 		( cd $$m && '$(GOLANGCI_LINT)' run --enable=gosec ); \
 	done
+	@$(MAKE) --no-print-directory test
 	@set -e; \
 	for m in $(GO_MODULES); do \
 		echo "== govulncheck $$m =="; \
@@ -129,6 +131,14 @@ ci-fix: _ci_binaries
 		( cd $$m && '$(GOVULNCHECK)' ./... ); \
 	done
 	@echo 'ci-fix: OK'
+
+# Run the Go test suite of every module under cmd/*
+test:
+	@set -e; \
+	for m in $(GO_MODULES); do \
+		echo "== go test $$m =="; \
+		( cd $$m && go test ./... ); \
+	done
 
 # Build all targets and create zip files
 all: zips

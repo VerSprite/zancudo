@@ -19,6 +19,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -46,6 +47,8 @@ func main() {
 		handleFetch()
 	case "clone":
 		handleClone()
+	case "new":
+		handleNew()
 	case "help", "--help", "-h":
 		printUsage()
 		os.Exit(0)
@@ -63,13 +66,16 @@ func printUsage() {
 	fmt.Println("Usage: gen_certs <subcommand> [options]")
 	fmt.Println("\nSubcommands:")
 	fmt.Println("  fetch   Fetch a remote certificate and clone it.")
-	fmt.Println("          Usage: gen_certs fetch <hostname:port> [flags]")
+	fmt.Println("          Usage: gen_certs fetch [flags] <hostname:port>")
 	fmt.Println("  clone   Clone a local certificate file.")
-	fmt.Println("          Usage: gen_certs clone <path_to_cert.pem> [flags]")
+	fmt.Println("          Usage: gen_certs clone [flags] <path_to_cert.pem>")
+	fmt.Println("  new     Create a new certificate from scratch for a hostname or IP.")
+	fmt.Println("          Usage: gen_certs new [flags] <hostname|ip>[:port]")
+	fmt.Println("          The port, if given, is ignored. \"localhost\" also covers 127.0.0.1 and ::1.")
 	fmt.Println("\nFlags:")
-	fmt.Println("  --proxy-hostname <host>   Hostname or IP to issue the new certificate for (instead of the original's).")
-	fmt.Println("  --out-cert <path>         Output path for the new certificate (default: \"proxy.crt\" for fetch, \"client.crt\" for clone).")
-	fmt.Println("  --out-key <path>          Output path for the new private key (default: \"proxy.key\" for fetch, \"client.key\" for clone).")
+	fmt.Println("  --proxy-hostname <host>   (fetch, clone) Hostname or IP to issue the new certificate for (instead of the original's).")
+	fmt.Println("  --out-cert <path>         Output path for the new certificate (default: \"proxy.crt\" for fetch and new, \"client.crt\" for clone).")
+	fmt.Println("  --out-key <path>          Output path for the new private key (default: \"proxy.key\" for fetch and new, \"client.key\" for clone).")
 	fmt.Println("\nCA Signing Options:")
 	fmt.Println("  --ca-cert <path>          Path to the CA certificate file for signing.")
 	fmt.Println("  --ca-key <path>           Path to the CA private key file for signing.")
@@ -166,6 +172,67 @@ func handleClone() {
 	caCert, caKey := processCAFlags(*genCA, *caCertPath, *caKeyPath, templateCert)
 
 	generateAndSave(templateCert, *proxyHostname, *outCert, *outKey, caCert, caKey)
+}
+
+func handleNew() {
+	newCmd := flag.NewFlagSet("new", flag.ContinueOnError)
+	newCmd.SetOutput(os.Stderr)
+	outCert := newCmd.String("out-cert", "proxy.crt", "Output path for the new certificate.")
+	outKey := newCmd.String("out-key", "proxy.key", "Output path for the new private key.")
+	caCertPath, caKeyPath, genCA := addCASigningFlags(newCmd)
+	if err := newCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+
+	if newCmd.NArg() != 1 {
+		log.Fatal("new command requires exactly one argument: <hostname|ip>")
+	}
+	host, err := parseHostArg(newCmd.Arg(0))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Creating new certificate for '%s'", host)
+
+	// No template for the CA: there is no real issuer to mimic, so a generated
+	// CA gets the default subject instead of an empty one.
+	caCert, caKey := processCAFlags(*genCA, *caCertPath, *caKeyPath, nil)
+
+	generateAndSave(newLeafTemplate(host), "", *outCert, *outKey, caCert, caKey)
+}
+
+// parseHostArg extracts the host from "host", "host:port", "[ipv6]" or "[ipv6]:port".
+func parseHostArg(arg string) (string, error) {
+	host := arg
+	if h, _, err := net.SplitHostPort(arg); err == nil {
+		host = h
+	} else if strings.HasPrefix(arg, "[") && strings.HasSuffix(arg, "]") {
+		host = arg[1 : len(arg)-1]
+	}
+	if host == "" {
+		return "", fmt.Errorf("no hostname or IP address in %q", arg)
+	}
+	return host, nil
+}
+
+// newLeafTemplate returns a template for a brand-new certificate for host,
+// usable on either side of the proxy (server and client auth). "localhost"
+// also covers the IPv4 and IPv6 loopback addresses.
+func newLeafTemplate(host string) *x509.Certificate {
+	template := &x509.Certificate{
+		Subject:     pkix.Name{CommonName: host},
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		template.IPAddresses = []net.IP{ip}
+	} else {
+		template.DNSNames = []string{host}
+	}
+	if strings.EqualFold(host, "localhost") {
+		template.IPAddresses = append(template.IPAddresses, net.IPv4(127, 0, 0, 1), net.IPv6loopback)
+	}
+	return template
 }
 
 func processCAFlags(genCA bool, caCertPath, caKeyPath string, leafCertAsTemplate *x509.Certificate) (*x509.Certificate, *rsa.PrivateKey) {

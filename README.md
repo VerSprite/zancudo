@@ -26,13 +26,17 @@ The proxy supports the following command-line flags:
 -   `--listen`: Address and port for the proxy to listen on. Default: `:8883`.
 -   `--broker`: Address and port of the remote MQTT broker. Default: `test.mosquitto.org:8883`.
 -   `--proxy-cert`: Path to the proxy's server public certificate file. If empty, the proxy listens for plaintext connections.
--   `--proxyKey`: Path to the proxy's server private key file. If empty, the proxy listens for plaintext connections.
+-   `--proxy-key`: Path to the proxy's server private key file. If empty, the proxy listens for plaintext connections.
 -   `--client-cert`: Path to the client's public certificate file. If empty, the proxy connects to the broker via plaintext.
 -   `--client-key`: Path to the client's private key file. If empty, the proxy connects to the broker via plaintext.
+-   `--jwt-key`: Path to an RSA, ECDSA or Ed25519 key used to verify the signature of JWT payloads. The file can hold a public key, a private key (only its public half is used) or an X.509 certificate of the token issuer, in PEM format. Can be repeated: each key is tried until one verifies the signature.
+-   `--proto`: Path to a `.proto` file, or to a directory that is searched recursively for `.proto` files, used to decode Protobuf payloads. Can be repeated.
 -   `--user`: Username for broker authentication. If provided, it overwrites the username sent by the client.
 -   `--pass`: Password for broker authentication. If provided, it overwrites the password sent by the client.
--   `--verbose`: Enable verbose logging for detailed packet analysis.
+-   `--verbose`, `-v`: Enable verbose logging for detailed packet analysis.
 -   `--no-color`: Disable colored output, which is useful for piping output to files.
+-   `--script`: Path to a JavaScript file that extends the proxy. See [Scripting with JavaScript](#scripting-with-javascript).
+-   `--version`: Print the version and exit.
 
 ### Example
 
@@ -70,14 +74,16 @@ This proxy requires server certificates to intercept TLS traffic. The `gen_certs
 
 ### Usage
 
-The tool has two main subcommands: `fetch` and `clone`.
+The tool has three main subcommands: `fetch`, `clone` and `new`.
+
+Flags must come **before** the positional argument: `./gen_certs fetch --gen-ca test.mosquitto.org:8883` works, but `./gen_certs fetch test.mosquitto.org:8883 --gen-ca` fails with an argument count error.
 
 #### Fetching from a Remote Server
 
 This is the recommended method. It connects to the real MQTT broker, fetches its public certificate, and generates a new, similar certificate for the proxy to use.
 
 ```bash
-./gen_certs fetch test.mosquitto.org:8883
+./gen_certs fetch [flags] <hostname:port>
 # Example:
 ./gen_certs fetch test.mosquitto.org:8883
 ```
@@ -89,18 +95,36 @@ This will create `proxy.crt` and `proxy.key` in the current directory.
 If you have a server certificate file locally, you can use it as a template.
 
 ```bash
-./gen_certs clone <path_to_cert.pem>
+./gen_certs clone [flags] <path_to_cert.pem>
 # Example:
 ./gen_certs clone /path/to/server.crt
 ```
 
+#### Creating a Certificate from Scratch
+
+If you have no certificate to mimic, `new` creates one for a hostname or IP address using sensible defaults.
+
+```bash
+./gen_certs new [flags] <hostname|ip>[:port]
+# Examples:
+./gen_certs new broker.local
+./gen_certs new 10.0.0.5:8883
+./gen_certs new --gen-ca localhost
+```
+
+The generated certificate:
+
+-   Has its Common Name and Subject Alternative Name set to the given host. Any `:port` is ignored, so you can pass the same address you would give `fetch`.
+-   Also covers `127.0.0.1` and `::1` when the host is `localhost`.
+-   Is valid for both TLS server and client authentication, so it can be used on either side of the proxy.
+
 ### Advanced Options
 
-Both subcommands support the following flags:
+All subcommands support the following flags:
 
--   `--proxy-hostname <host>`: Issue the new certificate for a specific hostname or IP address, instead of the one from the template certificate.
--   `--out-cert <path>`: Specify the output path for the new proxy certificate (default: `proxy.crt`).
--   `--out-key <path>`: Specify the output path for the new proxy private key (default: `proxy.key`).
+-   `--proxy-hostname <host>` (`fetch` and `clone` only): Issue the new certificate for a specific hostname or IP address, instead of the one from the template certificate.
+-   `--out-cert <path>`: Specify the output path for the new certificate (default: `proxy.crt` for `fetch` and `new`, `client.crt` for `clone`).
+-   `--out-key <path>`: Specify the output path for the new private key (default: `proxy.key` for `fetch` and `new`, `client.key` for `clone`).
 
 ### CA Signing Options
 
@@ -109,6 +133,7 @@ By default, generated certificates are self-signed. For clients that require a t
 1.  **Generate a new Root CA**: This is useful for creating a new chain of trust for your proxy. The tool will generate `ca.crt` and `ca.key` and use them to sign the new proxy certificate.
     -   When using `fetch`, the new CA will mimic the *issuer* of the remote server's certificate.
     -   When using `clone`, the new CA will mimic the *issuer* of the local certificate file.
+    -   When using `new`, the new CA gets a generic subject (`CN=MQTT Proxy Root CA`).
 
     ```bash
     ./gen_certs fetch --gen-ca test.mosquitto.org:8883

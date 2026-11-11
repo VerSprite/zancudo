@@ -13,6 +13,7 @@ import (
 	"crypto/cipher"
 	"crypto/ecdh"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/md5" //nolint:gosec // G501: intentionally exposed to JS crypto.hash for legacy/interop.
@@ -29,6 +30,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"encoding/xml"
+	"errors"
 	"flag"
 	"fmt"
 	"hash"
@@ -151,7 +153,7 @@ var (
 	showVersion bool
 
 	jwtVerifyKeys      multiStringFlag
-	loadedJWTKeys      []interface{}
+	loadedJWTKeys      []jwtKey
 	protoPaths         multiStringFlag
 	messageDescriptors []*desc.MessageDescriptor
 )
@@ -1832,7 +1834,7 @@ func printProxyUsage() {
 	fmt.Println("  --proxy-key <path>        Path to the proxy's server private key file. If empty, listens for plaintext.")
 	fmt.Println("  --client-cert <path>      Path to the client's public certificate file. If empty, connects via plaintext.")
 	fmt.Println("  --client-key <path>       Path to the client's private key file for authenticating with the broker")
-	fmt.Println("  --jwt-key <file>          Path to a private key file (PEM format) for verifying JWT signatures. Can be specified multiple times.")
+	fmt.Println("  --jwt-key <file>          RSA, ECDSA or Ed25519 key for verifying JWT signatures: a public key, private key or certificate (PEM). Can be specified multiple times.")
 	fmt.Println("  --proto <path>            Path to a .proto file or a directory of .proto files for payload decoding. Can be repeated.")
 	fmt.Println("  --user <username>         Username for MQTT authentication (replaces client's username if any)")
 	fmt.Println("  --pass <password>         Password for MQTT authentication (replaces client's password if any)")
@@ -1852,7 +1854,7 @@ func main() {
 	flag.StringVar(&proxyKeyFile, "proxy-key", "", "Path to the proxy's server private key file. If empty, listens for plaintext.")
 	flag.StringVar(&clientCertFile, "client-cert", "", "Path to the client's public certificate file. If empty, connects via plaintext.")
 	flag.StringVar(&clientKeyFile, "client-key", "", "Path to the client's private key file for authenticating with the broker")
-	flag.Var(&jwtVerifyKeys, "jwt-key", "Path to a private key file (PEM format) for verifying JWT signatures. Can be specified multiple times.")
+	flag.Var(&jwtVerifyKeys, "jwt-key", "RSA, ECDSA or Ed25519 key for verifying JWT signatures: a public key, private key or certificate (PEM). Can be specified multiple times.")
 	flag.Var(&protoPaths, "proto", "Path to a .proto file or a directory of .proto files for payload decoding. Can be repeated.")
 	flag.StringVar(&username, "user", "", "Username for MQTT authentication (replaces client's username if any)")
 	flag.StringVar(&password, "pass", "", "Password for MQTT authentication (replaces client's password if any)")
@@ -1909,28 +1911,7 @@ func main() {
 	// Load JWT verification keys
 	if len(jwtVerifyKeys) > 0 {
 		log.Println("Loading JWT verification keys...")
-		for _, keyPath := range jwtVerifyKeys {
-			pem, err := os.ReadFile(keyPath)
-			if err != nil {
-				log.Printf("  [!] Failed to read key file %s: %v", keyPath, err)
-				continue
-			}
-
-			key, err := jwt.ParseRSAPrivateKeyFromPEM(pem)
-			if err == nil {
-				loadedJWTKeys = append(loadedJWTKeys, key)
-				log.Printf("  [+] Loaded RSA key from %s", keyPath)
-				continue
-			}
-
-			key2, err := jwt.ParseECPrivateKeyFromPEM(pem)
-			if err == nil {
-				loadedJWTKeys = append(loadedJWTKeys, key2)
-				log.Printf("  [+] Loaded ECDSA key from %s", keyPath)
-				continue
-			}
-			log.Printf("  [!] Failed to parse key from %s (supports RSA/ECDSA PEM)", keyPath)
-		}
+		loadedJWTKeys = loadJWTKeys(jwtVerifyKeys)
 	}
 
 	log.Printf("MQTT MITM proxy listening on %s%s%s", payloadColor, proxyListenAddr, colorReset)
@@ -2089,6 +2070,101 @@ func processPayload(data []byte) {
 	handlePlaintextOrHex(data)
 }
 
+// jwtKey is a public key for verifying JWT signatures, with the file it came from.
+type jwtKey struct {
+	path string
+	key  crypto.PublicKey
+}
+
+// loadJWTKeys loads every --jwt-key file it can, logging and skipping the rest.
+func loadJWTKeys(paths []string) []jwtKey {
+	var keys []jwtKey
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Printf("  [!] Failed to read key file %s: %v", path, err)
+			continue
+		}
+		key, err := loadJWTKey(data)
+		if err != nil {
+			log.Printf("  [!] Failed to load key from %s: %v", path, err)
+			continue
+		}
+		keys = append(keys, jwtKey{path: path, key: key})
+		log.Printf("  [+] Loaded %s key from %s", jwtKeyType(key), path)
+	}
+	return keys
+}
+
+// loadJWTKey returns the public key found in PEM data holding an RSA, ECDSA or
+// Ed25519 public key, private key or X.509 certificate. Only the public half is
+// kept, as that is all signature verification needs. PEM blocks that hold no
+// usable key (such as the EC PARAMETERS block written by "openssl ecparam
+// -genkey") are skipped.
+func loadJWTKey(pemData []byte) (crypto.PublicKey, error) {
+	err := errors.New("no PEM data found")
+	for {
+		var block *pem.Block
+		block, pemData = pem.Decode(pemData)
+		if block == nil {
+			return nil, err
+		}
+		var key crypto.PublicKey
+		if key, err = parseJWTKeyDER(block.Bytes); err == nil {
+			return key, nil
+		}
+		err = fmt.Errorf("PEM block %q: %w", block.Type, err)
+	}
+}
+
+func parseJWTKeyDER(der []byte) (crypto.PublicKey, error) {
+	var key any
+	if k, err := x509.ParsePKIXPublicKey(der); err == nil {
+		key = k
+	} else if cert, err := x509.ParseCertificate(der); err == nil {
+		key = cert.PublicKey
+	} else if k, err := x509.ParsePKCS1PublicKey(der); err == nil {
+		key = k
+	} else if k, err := x509.ParsePKCS8PrivateKey(der); err == nil {
+		key = k
+	} else if k, err := x509.ParsePKCS1PrivateKey(der); err == nil {
+		key = k
+	} else if k, err := x509.ParseECPrivateKey(der); err == nil {
+		key = k
+	} else {
+		return nil, errors.New("not a recognized public key, private key or certificate")
+	}
+	if priv, ok := key.(crypto.Signer); ok {
+		key = priv.Public()
+	}
+	if jwtKeyType(key) == "" {
+		return nil, fmt.Errorf("unsupported key type %T (want RSA, ECDSA or Ed25519)", key)
+	}
+	return key, nil
+}
+
+// jwtKeyType names a supported JWT verification key type, or returns "" if unsupported.
+func jwtKeyType(key crypto.PublicKey) string {
+	switch key.(type) {
+	case *rsa.PublicKey:
+		return "RSA"
+	case *ecdsa.PublicKey:
+		return "ECDSA"
+	case ed25519.PublicKey:
+		return "Ed25519"
+	}
+	return ""
+}
+
+// verifyJWTSignature checks tokenString against key. As before, claims such as
+// "exp" are validated too, so an expired token fails even with the right key.
+func verifyJWTSignature(tokenString string, key crypto.PublicKey) error {
+	_, err := jwt.Parse(tokenString, func(*jwt.Token) (interface{}, error) {
+		return key, nil
+	})
+	return err
+}
+
 func tryJWT(data []byte) bool {
 	tokenString := string(data)
 	if !strings.Contains(tokenString, ".") {
@@ -2119,33 +2195,14 @@ func tryJWT(data []byte) bool {
 	if len(loadedJWTKeys) > 0 {
 		fmt.Printf("    %sSignature Verification:%s\n", topicColor, colorReset)
 		verified := false
-		for i, key := range loadedJWTKeys {
-
-			// Re-parse the token, this time with the key for verification
-			_, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-				// The key is the private key, but for verification we need the public key.
-				switch k := key.(type) {
-				case *rsa.PrivateKey:
-					return &k.PublicKey, nil
-				case *ecdsa.PrivateKey:
-					return &k.PublicKey, nil
-				default:
-					return nil, fmt.Errorf("unsupported key type: %T", k)
-				}
-			})
-
-			keyIdentifier := fmt.Sprintf("key #%d", i+1)
-			if i < len(jwtVerifyKeys) {
-				keyIdentifier = jwtVerifyKeys[i]
+		for _, k := range loadedJWTKeys {
+			if err := verifyJWTSignature(tokenString, k.key); err != nil {
+				fmt.Printf("      %s[%s] FAILED: %v%s\n", colorRed, k.path, err, colorReset)
+				continue
 			}
-
-			if err == nil {
-				fmt.Printf("      %s[%s] SUCCESS%s\n", colorGreen, keyIdentifier, colorReset)
-				verified = true
-				break // Stop on first success
-			} else {
-				fmt.Printf("      %s[%s] FAILED: %v%s\n", colorRed, keyIdentifier, err, colorReset)
-			}
+			fmt.Printf("      %s[%s] SUCCESS%s\n", colorGreen, k.path, colorReset)
+			verified = true
+			break // Stop on first success
 		}
 		if !verified {
 			fmt.Printf("      %sSignature not valid with any of the provided keys.%s\n", colorRed, colorReset)
