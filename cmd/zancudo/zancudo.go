@@ -1074,6 +1074,23 @@ func hexToASCII(hexData []byte) string {
 	return result
 }
 
+func storeToFileIfEnabled(data [] byte) {
+	if len(rawPacketsDir) > 0 {
+		packetUUID := uuid.New() 
+		log.Printf("Packet identifier: %s, dataTotal: %d", packetUUID.String(), len(data))
+		fp := filepath.Join(rawPacketsDir, fmt.Sprintf("%s.bin", packetUUID.String()))
+		f, err := os.Create(fp)
+		if err != nil {
+			panic(err)
+		}
+		n, err := f.Write(data)
+		if err != nil || len(data) != n {
+			panic("something went wrong while writing file")
+		}
+		f.Close()
+	}
+}
+
 func processMQTTPackets(direction string, packets [][]byte) [][]byte {
 	for _, packet := range packets {
 		analyzeMQTTPacket(direction, packet)
@@ -1118,20 +1135,6 @@ func analyzeMQTTPacket(direction string, data []byte) {
 	}
 
 	log.Printf("\n=== %s%s%s %s MQTT Packet ===", directionColor, directionText, colorReset, timestamp)
-	if len(rawPacketsDir) > 0 {
-		packetUUID := uuid.New() 
-		log.Printf("Packet identifier: %s, dataTotal: %d, headerEnd: %d", packetUUID.String(), len(data), headerEnd)
-		fp := filepath.Join(rawPacketsDir, fmt.Sprintf("%s.bin", packetUUID.String()))
-		f, err := os.Create(fp)
-		if err != nil {
-			panic(err)
-		}
-		n, err := f.Write(data)
-		if err != nil || len(data) != n {
-			panic("something went wrong while writing file")
-		} 
-		f.Close()
-	}
 	log.Printf("Packet Type: %s%s%s (0x%02X)", packetTypeColor, getPacketTypeName(packetType), colorReset, packetType)
 	log.Printf("Flags: 0x%01X", flags)
 
@@ -1353,6 +1356,7 @@ func analyzePUBLISH(payload []byte, flags byte, direction string) {
 
 	fmt.Printf("  %sPayload:%s\n", payloadColor, colorReset)
 	processPayload(publishPayload)
+	storeToFileIfEnabled(publishPayload)
 }
 
 func analyzeSUBSCRIBE(payload []byte, flags byte) {
@@ -1844,7 +1848,7 @@ func printProxyUsage() {
 	fmt.Println()
 	fmt.Println("Usage: zancudo [flags]")
 	fmt.Println("\nFlags:")
-	fmt.Println("  --store-raw <dirpath>     Directory where raw packets are going to be stored ( default: not stored )")
+	fmt.Println("  --store-publish-payload <dirpath>     Directory where raw publish packets are going to be stored ( default: not stored )")
 	fmt.Println("  --listen <addr:port>      Address and port for the proxy to listen on (default: :8883)")
 	fmt.Println("  --broker <addr:port>      Address and port of the remote MQTT broker (default: test.mosquitto.org:8883)")
 	fmt.Println("  --proxy-cert <path>       Path to the proxy's server public certificate file. If empty, listens for plaintext.")
@@ -1865,7 +1869,7 @@ func main() {
 	log.SetFlags(0)
 
 	flag.Usage = printProxyUsage
-	flag.StringVar(&rawPacketsDir, "store-raw", "", "Directory where raw packets are going to be stored ( default: not stored )")
+	flag.StringVar(&rawPacketsDir, "store-publish-payload", "", "Directory where raw publish packets are going to be stored ( default: not stored )")
 	flag.StringVar(&proxyListenAddr, "listen", ":8883", "Address and port for the proxy to listen on (e.g., '127.0.0.1:8883')")
 	flag.StringVar(&brokerAddr, "broker", "test.mosquitto.org:8883", "Address and port of the remote MQTT broker. Use an IP address to avoid DNS loops.")
 	flag.StringVar(&proxyCertFile, "proxy-cert", "", "Path to the proxy's server public certificate file. If empty, listens for plaintext.")
