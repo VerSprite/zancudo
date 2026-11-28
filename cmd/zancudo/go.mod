@@ -20,6 +20,7 @@ require (
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/pprof v0.0.0-20261105003125-4bf881d7fb0b // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/jhump/protoreflect/v2 v2.0.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/petermattis/goid v0.0.0-20261109124353-7cfa343ad0ab // indirect
